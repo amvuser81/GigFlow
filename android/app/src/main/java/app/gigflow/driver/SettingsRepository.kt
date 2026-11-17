@@ -154,4 +154,24 @@ class SettingsRepository(context: Context) {
         maxDistanceKm = maxDistanceKm,
         overlaySeconds = overlaySeconds,
     )
+// ---- Taught UI selectors per app (from Diagnostics Teach Mode) ----
+
+ private fun taughtAll(): JSONObject =
+     JSONObject(prefs.getString("taught_selectors", "{}") ?: "{}")
+
+ fun taughtSelectors(pkg: String): JSONObject? =
+     taughtAll().optJSONObject(pkg)
+
+ fun setTaughtSelectors(pkg: String, data: JSONObject) {
+     prefs.edit().putString(
+         "taught_selectors",
+         taughtAll().put(pkg, data).toString()
+     ).apply()
+ }
+
+ fun clearTaughtSelectors(pkg: String) {
+     val o = taughtAll()
+     o.remove(pkg)
+     prefs.edit().putString("taught_selectors", o.toString()).apply()
+ }
 }
