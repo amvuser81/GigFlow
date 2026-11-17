@@ -399,7 +399,16 @@ class IosSheet(ctx: Context, private val p: Palette) {
                 topMargin = dp(ctx, 8f)
             }
         })
-        container.addView(content)
+                val scroll = ScrollView(ctx).apply {
+            isFillViewport = true
+            addView(content, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ))
+        }
+        container.addView(scroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f,
+        ))
         container.background = GradientDrawable(
             GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(p.card, p.card),
         ).apply { cornerRadii = floatArrayOf(
@@ -408,35 +417,41 @@ class IosSheet(ctx: Context, private val p: Palette) {
         ) }
         container.setPadding(0, 0, 0, dp(ctx, 20f))
 
-        // Full-height window with a tap-catcher behind the card — touches on
-        // the dimmed area dismiss with the same slide-down animation (the
-        // default dialog window only covered the card, so outside taps did
-        // nothing).
         val scrim = View(ctx).apply {
             isClickable = true
             setOnClickListener { dismiss() }
         }
+        val containerLp = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM,
+        )
         val outer = FrameLayout(ctx).apply {
             addView(scrim, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-            addView(container, FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
+            addView(container, containerLp)
         }
-             outer.setOnApplyWindowInsetsListener { _, insets ->
-         val bottom = if (android.os.Build.VERSION.SDK_INT >= 30) {
-             maxOf(
-                 insets.getInsetsIgnoringVisibility(WindowInsets.Type.navigationBars()).bottom,
-                 insets.getInsets(WindowInsets.Type.ime()).bottom,
-             )
-         } else {
-             dp(ctx, 36f)
-         }
-         container.setPadding(0, 0, 0, dp(ctx, 20f) + bottom)
-         insets
-     }
+        outer.setOnApplyWindowInsetsListener { _, insets ->
+            val top = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                insets.getInsets(WindowInsets.Type.statusBars() or WindowInsets.Type.displayCutout()).top
+            } else {
+                dp(ctx, 28f)
+            }
+            val bottom = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                maxOf(
+                    insets.getInsetsIgnoringVisibility(WindowInsets.Type.navigationBars()).bottom,
+                    insets.getInsets(WindowInsets.Type.ime()).bottom,
+                )
+            } else {
+                dp(ctx, 36f)
+            }
+            containerLp.topMargin = top + dp(ctx, 12f)
+            container.layoutParams = containerLp
+            container.setPadding(0, 0, 0, dp(ctx, 20f) + bottom)
+            insets
+        }
 
         dialog.setContentView(outer)
+
         dialog.setCanceledOnTouchOutside(true)
         dialog.window?.let { w ->
             w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
