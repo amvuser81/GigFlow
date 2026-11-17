@@ -23,7 +23,7 @@ jobs:
 
       - name: Bump versionName for auto-updater
         run: |
-          VER="1.4.${{ github.run_number }}"
+          VER="1.7.${{ github.run_number }}"
           echo "APP_VER=$VER" >> $GITHUB_ENV
           sed -i -E "s/versionName[[:space:]]*=*[[:space:]]*\"[^\"]+\"/versionName = \"$VER\"/" android/app/build.gradle*
           sed -i -E "s/versionName[[:space:]]+\"[^\"]+\"/versionName \"$VER\"/" android/app/build.gradle*
