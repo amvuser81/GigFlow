@@ -406,9 +406,10 @@ class IosSheet(ctx: Context, private val p: Palette) {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ))
         }
-        container.addView(scroll, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f,
+                container.addView(scroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
         ))
+
         container.background = GradientDrawable(
             GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(p.card, p.card),
         ).apply { cornerRadii = floatArrayOf(
