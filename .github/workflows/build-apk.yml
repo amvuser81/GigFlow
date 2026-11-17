@@ -1,9 +1,12 @@
-name: Build Debug APK
+name: Build & Release APK
 
 on:
   push:
     branches: [ master ]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -18,6 +21,13 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Bump versionName for auto-updater
+        run: |
+          VER="1.4.${{ github.run_number }}"
+          echo "APP_VER=$VER" >> $GITHUB_ENV
+          sed -i -E "s/versionName[[:space:]]*=*[[:space:]]*\"[^\"]+\"/versionName = \"$VER\"/" android/app/build.gradle*
+          sed -i -E "s/versionName[[:space:]]+\"[^\"]+\"/versionName \"$VER\"/" android/app/build.gradle*
+
       - name: Make gradlew executable
         run: chmod +x android/gradlew
         continue-on-error: true
@@ -31,8 +41,20 @@ jobs:
             gradle assembleDebug
           fi
 
-      - name: Upload APK
+      - name: Rename APK for GigFlow Updater
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk "GigFlow-${{ env.APP_VER }}.apk"
+
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v5
         with:
-          name: GigFlow-debug-apk
-          path: android/app/build/outputs/apk/debug/*.apk
+          name: GigFlow-${{ env.APP_VER }}
+          path: GigFlow-${{ env.APP_VER }}.apk
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.APP_VER }}
+          name: GigFlow v${{ env.APP_VER }}
+          body: Automated build from commit ${{ github.sha }}
+          files: GigFlow-${{ env.APP_VER }}.apk
