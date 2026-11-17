@@ -189,8 +189,9 @@ class AssistScreen(
         }
     }
 
-    /** Sheet listing the texts the parser read — screenshot this to report. */
+        /** Sheet listing captured screen nodes + interactive Teach Assistant mode. */
     private fun showDiag(name: String, snap: Diagnostics.Snap) {
+        val pkg = watchedApps.firstOrNull { it.first == name }?.second ?: return
         val sheet = IosSheet(ctx, p)
         val col = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
@@ -201,13 +202,16 @@ class AssistScreen(
             textSize = Ios.T_HEADLINE; setTypeface(typeface, Typeface.BOLD)
             setTextColor(p.label); setPadding(0, 0, 0, dp(ctx, 4f))
         })
+
+        val existing = settings.taughtSelectors(pkg)
         col.addView(TextView(ctx).apply {
-            text = if (snap.outcome == "miss")
-                "This screen had a price on it but wasn't read as an offer — the app's layout probably changed. Tap 'Share this report' and send it over."
-            else "Everything the assistant read on the last screen."
+            text = if (existing != null)
+                "Taught layout active. Tap 'Teach Assistant' below to update which fields belong to offers."
+            else "Everything the assistant read on the last screen. Tap 'Teach Assistant' to assign offer fields."
             textSize = Ios.T_FOOTNOTE; setTextColor(p.label2)
             setPadding(0, 0, 0, dp(ctx, 10f))
         })
+
         snap.texts.forEach { t ->
             col.addView(TextView(ctx).apply {
                 text = "· $t"
@@ -215,31 +219,144 @@ class AssistScreen(
                 setPadding(0, dp(ctx, 2f), 0, dp(ctx, 2f))
             })
         }
-        // Share the raw node dump — [tap]/view-id markers included — so a
-        // parse miss can be reported as text, not just a screenshot.
-        col.addView(TextView(ctx).apply {
-            text = "Share this report"
-            textSize = Ios.T_BODY; setTypeface(typeface, Typeface.BOLD)
-            setTextColor(p.tint); gravity = android.view.Gravity.CENTER
-            setPadding(0, dp(ctx, 14f), 0, dp(ctx, 6f))
-            setOnClickListener {
-                val body = buildString {
-                    append("$name · outcome=${snap.outcome}\n")
-                    append("pkg=${
-                        watchedApps.firstOrNull { it.first == name }?.second ?: "?"
-                    }\n")
-                    append("app=${ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName}\n\n")
-                    snap.texts.forEach { append("· $it\n") }
-                }
-                val send = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_TEXT, body)
-                }
-                ctx.startActivity(Intent.createChooser(send, "Share diagnostics"))
+
+        val teachBtn = iosButton(ctx, p, "Teach Assistant")
+        teachBtn.setOnClickListener {
+            sheet.dismiss()
+            openTeachSheet(name, pkg, snap)
+        }
+        col.addView(teachBtn, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dp(ctx, 14f) })
+
+        if (existing != null) {
+            val clearBtn = iosButton(ctx, p, "Reset taught layout", p.fill)
+            clearBtn.setTextColor(p.label)
+            clearBtn.setOnClickListener {
+                settings.clearTaughtSelectors(pkg)
+                Toast.makeText(ctx, "$name layout reset", Toast.LENGTH_SHORT).show()
+                sheet.dismiss()
             }
-        })
+            col.addView(clearBtn, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(ctx, 8f) })
+        }
+
         sheet.add(col).show()
     }
+
+    /** Interactive Teach Mode: tap captured screen nodes to map offer fields. */
+    private fun openTeachSheet(name: String, pkg: String, snap: Diagnostics.Snap) {
+        val idRegex = Regex("""\(([^)]+)\)""")
+        data class Candidate(val display: String, val viewId: String, val isTap: Boolean)
+
+        val candidates = snap.texts.mapNotNull { line ->
+            val id = idRegex.find(line)?.groupValues?.get(1) ?: return@mapNotNull null
+            Candidate(line, id, line.startsWith("[tap]"))
+        }.distinctBy { "${it.isTap}:${it.viewId}:${it.display}" }
+
+        if (candidates.isEmpty()) {
+            Toast.makeText(ctx, "No labeled UI elements found on this screen yet", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val current = settings.taughtSelectors(pkg) ?: JSONObject()
+        var payoutId = current.optString("payoutId", "")
+        var distanceId = current.optString("distanceId", "")
+        var timeId = current.optString("timeId", "")
+        var declineId = current.optString("declineId", "")
+        var acceptId = current.optString("acceptId", "")
+
+        val steps = listOf("Payout ($)", "Distance", "Time / Duration", "Decline Button", "Accept Button")
+        var stepIdx = 0
+
+        val sheet = IosSheet(ctx, p)
+        val col = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(ctx, 20f), dp(ctx, 4f), dp(ctx, 20f), dp(ctx, 12f))
+        }
+        val titleTv = TextView(ctx).apply {
+            text = "Teach $name"
+            textSize = Ios.T_HEADLINE; setTypeface(typeface, Typeface.BOLD); setTextColor(p.label)
+        }
+        val promptTv = TextView(ctx).apply {
+            textSize = Ios.T_SUBHEAD; setTypeface(typeface, Typeface.BOLD); setTextColor(p.tint)
+            setPadding(0, dp(ctx, 6f), 0, dp(ctx, 4f))
+        }
+        val summaryTv = TextView(ctx).apply {
+            textSize = Ios.T_CAPTION; setTextColor(p.label2)
+            setPadding(0, 0, 0, dp(ctx, 10f))
+        }
+
+        fun refreshLabels() {
+            promptTv.text = "Step ${stepIdx + 1}/5: Tap the ${steps[stepIdx]} item below"
+            summaryTv.text = buildString {
+                append("Payout: ${payoutId.ifEmpty { "auto" }}  ·  ")
+                append("Dist: ${distanceId.ifEmpty { "auto" }}  ·  ")
+                append("Time: ${timeId.ifEmpty { "auto" }}\n")
+                append("Decline: ${declineId.ifEmpty { "auto" }}  ·  ")
+                append("Accept: ${acceptId.ifEmpty { "auto" }}")
+            }
+        }
+        refreshLabels()
+
+        col.addView(titleTv)
+        col.addView(promptTv)
+        col.addView(summaryTv)
+
+        candidates.forEach { item ->
+            val row = TextView(ctx).apply {
+                text = item.display
+                textSize = Ios.T_FOOTNOTE
+                setTextColor(p.label)
+                background = Ios.rounded(8f, p.fill, ctx)
+                setPadding(dp(ctx, 12f), dp(ctx, 10f), dp(ctx, 12f), dp(ctx, 10f))
+                setOnClickListener {
+                    when (stepIdx) {
+                        0 -> payoutId = item.viewId
+                        1 -> distanceId = item.viewId
+                        2 -> timeId = item.viewId
+                        3 -> declineId = item.viewId
+                        4 -> acceptId = item.viewId
+                    }
+                    if (stepIdx < steps.lastIndex) stepIdx++
+                    refreshLabels()
+                }
+            }
+            col.addView(row, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(ctx, 6f) })
+        }
+
+        val skipBtn = iosButton(ctx, p, "Skip step (use auto)", p.fill)
+        skipBtn.setTextColor(p.label)
+        skipBtn.setOnClickListener {
+            if (stepIdx < steps.lastIndex) stepIdx++
+            refreshLabels()
+        }
+        col.addView(skipBtn, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dp(ctx, 6f) })
+
+        val saveBtn = iosButton(ctx, p, "Save taught layout")
+        saveBtn.setOnClickListener {
+            val obj = JSONObject()
+            if (payoutId.isNotEmpty()) obj.put("payoutId", payoutId)
+            if (distanceId.isNotEmpty()) obj.put("distanceId", distanceId)
+            if (timeId.isNotEmpty()) obj.put("timeId", timeId)
+            if (declineId.isNotEmpty()) obj.put("declineId", declineId)
+            if (acceptId.isNotEmpty()) obj.put("acceptId", acceptId)
+            settings.setTaughtSelectors(pkg, obj)
+            Toast.makeText(ctx, "Saved $name layout!", Toast.LENGTH_SHORT).show()
+            sheet.dismiss()
+        }
+        col.addView(saveBtn, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dp(ctx, 8f) })
+
+        sheet.add(col).show()
+    }
+
 
     private fun automationCard(): View {
         val card = Sections.card(ctx, p)
