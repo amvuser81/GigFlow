@@ -84,9 +84,10 @@ class MainActivity : Activity() {
                     WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             }
             root.setOnApplyWindowInsetsListener { _, insets ->
-                val sys = insets.getInsets(WindowInsets.Type.systemBars())
-                content.setPadding(0, sys.top, 0, 0)
-                tabBar.setPadding(0, 0, 0, sys.bottom)
+                val top = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout()).top
+                val bottom = insets.getInsetsIgnoringVisibility(WindowInsets.Type.navigationBars()).bottom
+                content.setPadding(0, top, 0, 0)
+                tabBar.setPadding(0, 0, 0, bottom)
                 insets
             }
         } else {
