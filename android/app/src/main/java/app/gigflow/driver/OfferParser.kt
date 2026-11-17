@@ -2,6 +2,9 @@ package app.gigflow.driver
 
 import android.graphics.Rect
 import android.view.accessibility.AccessibilityNodeInfo
+import org.json.JSONObject
+import kotlin.math.abs
+
 
 /**
  * Heuristic offer-card extractor.
@@ -156,12 +159,15 @@ object OfferParser {
      *  Uber docs: "tap anywhere on the black bar"; Lyft: "tap anywhere". */
     private val TAP_ANYWHERE_PKGS = setOf("com.ubercab.driver", "com.lyft.android.driver")
 
-    data class FlatNode(
+        data class FlatNode(
         val text: String,
         val viewId: String?,
         val bounds: Rect,
         val clickable: Boolean,
-    )
+    ) {
+        val shortId: String? get() = viewId?.substringAfterLast('/')?.takeIf { it.isNotEmpty() }
+    }
+
 
     fun flatten(root: AccessibilityNodeInfo): List<FlatNode> {
         val out = ArrayList<FlatNode>(64)
@@ -184,71 +190,113 @@ object OfferParser {
         return out
     }
 
+    private fun parseDistanceKm(t: String): Double? {
+        val v = MILES.find(t)?.groupValues?.get(1)?.toDoubleOrNull()?.times(1.609344)
+            ?: KM.find(t)?.groupValues?.get(1)?.toDoubleOrNull()
+        return v?.takeIf { it in 0.2..500.0 }
+    }
+
+    private fun parseDurationMin(t: String): Double? {
+        if (TIMER_HINTS.containsMatchIn(t)) return null
+        val v = HOURS_MIN.find(t)?.let { m ->
+            val h = m.groupValues[1].toDouble()
+            val mnt = m.groupValues.getOrNull(2)?.toDoubleOrNull() ?: 0.0
+            h * 60 + mnt
+        } ?: MINUTES.find(t)?.groupValues?.get(1)?.toDoubleOrNull()
+        return v?.takeIf { it in 1.0..600.0 }
+    }
+
     fun parse(
         pkg: String,
         nodes: List<FlatNode>,
         extra: Regex? = null,
         extraSymbol: String = "$",
+        taught: JSONObject? = null,
     ): DetectedOffer? {
         val texts = nodes.map { it.text }
 
-        // Collect money figures with their context. The card total is usually
-        // the largest standalone amount; "incl. tip" lines become tips.
+        val taughtPayoutId = taught?.optString("payoutId", "")?.takeIf { it.isNotEmpty() }
+        val taughtDistId = taught?.optString("distanceId", "")?.takeIf { it.isNotEmpty() }
+        val taughtTimeId = taught?.optString("timeId", "")?.takeIf { it.isNotEmpty() }
+        val taughtAcceptId = taught?.optString("acceptId", "")?.takeIf { it.isNotEmpty() }
+        val taughtDeclineId = taught?.optString("declineId", "")?.takeIf { it.isNotEmpty() }
+
         data class Money(val node: FlatNode, val amount: Double, val currency: String, val raw: String)
         val moneyNodes = nodes.mapNotNull { n ->
             moneyOf(n.text, extra, extraSymbol)?.let { (amount, cur) -> Money(n, amount, cur, n.text) }
         }
         if (moneyNodes.isEmpty()) return null
 
-        val payout = moneyNodes
-            .filter { it.amount > 0.5 && !TIP_WORD.containsMatchIn(it.raw) }
-            .maxOfOrNull { it.amount } ?: return null
-        val payoutMoney = moneyNodes.firstOrNull { it.amount == payout }
-        val currency = payoutMoney?.currency ?: "$"
+        val taughtMoney = if (taughtPayoutId != null) {
+            moneyNodes.filter { it.node.shortId == taughtPayoutId && it.amount > 0.5 }
+        } else emptyList()
+
+        val candidateMoney = taughtMoney.ifEmpty {
+            moneyNodes.filter { it.amount > 0.5 && !TIP_WORD.containsMatchIn(it.raw) }
+        }
+        if (candidateMoney.isEmpty()) return null
+
+        val distNodes = nodes.mapNotNull { n -> parseDistanceKm(n.text)?.let { n to it } }
+        val timeNodes = nodes.mapNotNull { n -> parseDurationMin(n.text)?.let { n to it } }
+
+        val anchorMoney = if (candidateMoney.size > 1 && (distNodes.isNotEmpty() || timeNodes.isNotEmpty())) {
+            candidateMoney.minByOrNull { m ->
+                val dDist = distNodes.minOfOrNull { abs(it.first.bounds.centerY() - m.node.bounds.centerY()) } ?: 9999
+                val dTime = timeNodes.minOfOrNull { abs(it.first.bounds.centerY() - m.node.bounds.centerY()) } ?: 9999
+                minOf(dDist, dTime)
+            }!!
+        } else {
+            candidateMoney.maxByOrNull { it.amount }!!
+        }
+
+        val payout = anchorMoney.amount
+        val payoutNode = anchorMoney.node
+        val currency = anchorMoney.currency
+        val anchorY = payoutNode.bounds.centerY()
 
         val tip = moneyNodes
             .filter { TIP_WORD.containsMatchIn(it.raw) }
-            .maxOfOrNull { it.amount }
+            .minByOrNull { abs(it.node.bounds.centerY() - anchorY) }
+            ?.amount
 
-        // Distances: take the largest plausible one (total trip distance).
-        val distanceKm = texts.mapNotNull { t ->
-            MILES.find(t)?.groupValues?.get(1)?.toDoubleOrNull()?.times(1.609344)
-                ?: KM.find(t)?.groupValues?.get(1)?.toDoubleOrNull()
-        }.filter { it in 0.2..500.0 }.maxOrNull()
+        val distanceKm = (if (taughtDistId != null) {
+            distNodes.filter { it.first.shortId == taughtDistId }
+                .minByOrNull { abs(it.first.bounds.centerY() - anchorY) }?.second
+        } else null)
+            ?: distNodes.minByOrNull { abs(it.first.bounds.centerY() - anchorY) }?.second
 
-        // Duration: ignore countdown timers (tiny ints, "seconds").
-        val durationMin = texts.mapNotNull { t ->
-            if (TIMER_HINTS.containsMatchIn(t)) return@mapNotNull null
-            HOURS_MIN.find(t)?.let { m ->
-                val h = m.groupValues[1].toDouble()
-                val mnt = m.groupValues.getOrNull(2)?.toDoubleOrNull() ?: 0.0
-                h * 60 + mnt
-            } ?: MINUTES.find(t)?.groupValues?.get(1)?.toDoubleOrNull()
-        }.filter { it in 1.0..600.0 }.maxOrNull()
+        val durationMin = (if (taughtTimeId != null) {
+            timeNodes.filter { it.first.shortId == taughtTimeId }
+                .minByOrNull { abs(it.first.bounds.centerY() - anchorY) }?.second
+        } else null)
+            ?: timeNodes.minByOrNull { abs(it.first.bounds.centerY() - anchorY) }?.second
 
-        // Expiry countdown — "0:15" / "12s" style, Mystro shows it ticking.
         val expiresInSec = texts.mapNotNull { t ->
             EXPIRY.find(t.trim())?.let { m ->
                 val mm = m.groupValues[1].toIntOrNull()
                 if (mm != null) mm * 60 + (m.groupValues[2].toIntOrNull() ?: 0)
                 else (m.groupValues[3].ifEmpty { m.groupValues[5] }).toIntOrNull()
             }
-        }.filter { it in 1..300 }.minOrNull() // Instacart batch timers run ~4min
+        }.filter { it in 1..300 }.minOrNull()
 
-        // Need at least payout + one of distance/duration to call it an offer.
         if (distanceKm == null && durationMin == null) return null
 
-        fun nodeMatching(re: Regex, clickableOnly: Boolean): NodeRef? =
-            nodes.firstOrNull { n ->
-                re.containsMatchIn(n.text) && (!clickableOnly || n.clickable) && n.bounds.width() > 0
-            }?.let { NodeRef(it.bounds, it.text) }
+        fun byTaughtId(id: String?): NodeRef? {
+            if (id == null) return null
+            return nodes.filter { it.shortId == id && it.bounds.width() > 0 }
+                .minByOrNull { abs(it.bounds.centerY() - anchorY) }
+                ?.let { NodeRef(it.bounds, it.text) }
+        }
 
-        // Uber/Lyft accept the request when *anywhere* on the card is tapped —
-        // there is no labelled Accept control, so the affordance is the card
-        // itself: the smallest clickable node containing the payout text.
-        fun tapAnywhereAccept(payoutNode: FlatNode?): NodeRef? {
+        fun nodeMatching(re: Regex, clickableOnly: Boolean): NodeRef? =
+            nodes.filter { n ->
+                re.containsMatchIn(n.text) && (!clickableOnly || n.clickable) && n.bounds.width() > 0
+            }.minByOrNull { abs(it.bounds.centerY() - anchorY) }
+                ?.let { NodeRef(it.bounds, it.text) }
+
+        fun tapAnywhereAccept(pNode: FlatNode?): NodeRef? {
             if (pkg !in TAP_ANYWHERE_PKGS) return null
-            val m = payoutNode ?: return null
+            val m = pNode ?: return null
             val cx = m.bounds.centerX(); val cy = m.bounds.centerY()
             return nodes
                 .filter { it.clickable && it.bounds.contains(cx, cy) }
@@ -258,14 +306,17 @@ object OfferParser {
 
         val isReservation = texts.any { RESERVATION.containsMatchIn(it) }
 
-        val accept = nodeMatching(ACCEPT_WORDS, clickableOnly = true)
+        val accept = byTaughtId(taughtAcceptId)
+            ?: nodeMatching(ACCEPT_WORDS, clickableOnly = true)
             ?: nodeMatching(ACCEPT_WORDS, clickableOnly = false)
             ?: if (isReservation && pkg == "com.amazon.rabbit") {
                 nodeMatching(RESERVE_ACCEPT, clickableOnly = true)
                     ?: nodeMatching(RESERVE_ACCEPT, clickableOnly = false)
             } else null
-            ?: tapAnywhereAccept(payoutMoney?.node)
-        val decline = nodeMatching(DECLINE_WORDS, clickableOnly = true)
+            ?: tapAnywhereAccept(payoutNode)
+
+        val decline = byTaughtId(taughtDeclineId)
+            ?: nodeMatching(DECLINE_WORDS, clickableOnly = true)
             ?: nodeMatching(DECLINE_WORDS, clickableOnly = false)
 
         return DetectedOffer(
