@@ -423,6 +423,18 @@ class IosSheet(ctx: Context, private val p: Palette) {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
         }
+             outer.setOnApplyWindowInsetsListener { _, insets ->
+         val bottom = if (android.os.Build.VERSION.SDK_INT >= 30) {
+             maxOf(
+                 insets.getInsetsIgnoringVisibility(WindowInsets.Type.navigationBars()).bottom,
+                 insets.getInsets(WindowInsets.Type.ime()).bottom,
+             )
+         } else {
+             dp(ctx, 36f)
+         }
+         container.setPadding(0, 0, 0, dp(ctx, 20f) + bottom)
+         insets
+     }
 
         dialog.setContentView(outer)
         dialog.setCanceledOnTouchOutside(true)
