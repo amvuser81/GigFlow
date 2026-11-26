@@ -1,0 +1,14 @@
+# Normalize text files to LF in the repository.
+* text=auto
+
+# Gradle wrapper: the shell script must stay LF or it fails to execute,
+# the Windows batch file must be CRLF.
+gradlew         text eol=lf
+gradlew.bat     text eol=crlf
+*.sh            text eol=lf
+
+# Binary assets — never normalize or diff as text.
+*.jar           binary
+*.apk           binary
+*.png           binary
+*.jks           binary

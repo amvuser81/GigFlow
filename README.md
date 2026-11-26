@@ -102,6 +102,39 @@ cd android
 ./gradlew assembleDebug   # → app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## Installing and updating on a phone
+
+**First install (one time).** Every release published before the signing
+change was a debug build: package `app.gigflow.driver.debug`, signed with
+the throwaway debug key. The signed releases are package
+`app.gigflow.driver` with the release key, so the phone treats them as a
+different app.
+
+1. On the phone, open the repo's **Releases** page and download the
+   `GigFlow-x.y.z.apk` you want.
+2. Chrome warns about APK downloads — tap **Download anyway**.
+3. When prompted, allow installs from that app: **Settings → Apps → Special
+   access → Install unknown apps → Chrome → Allow from this source**.
+4. Open the downloaded APK and tap **Install**. If Play Protect warns about
+   an unknown developer, choose **Install anyway** — the APK is signed by
+   your key, not distributed through Play.
+5. The new app installs *alongside* the old `.debug` copy. Open it, check
+   that offers and tracking work, then uninstall the old one (long-press
+   the icon → App info → Uninstall). Local records do not migrate — the
+   history lives in the old app's SQLite file, so keep it until you've
+   exported anything you care about.
+
+**After that, updates are in place.** The app checks GitHub Releases
+itself (one anonymous GET), downloads the new APK, and hands it to the
+system installer. Same package, same key, so it replaces the installed
+copy and keeps your data. You only confirm the install prompt.
+
+**The rule that keeps this working:** always sign with the same
+`release.jks`. Android refuses to install an update signed by a different
+key ("App not installed") — recovery means uninstalling and losing local
+data. If the machine is ever lost, restore `release.jks` and `password.txt`
+from your backup and re-add the four repository secrets.
+
 ## Releasing
 
 Releases are cut on purpose, never on a push. Pushing to `master` only

@@ -147,6 +147,34 @@ jobs:
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)
           "$APKSIGNER" verify --print-certs "$APK" | head -5
 
+      - name: Assert APK identity
+        env:
+          EXPECTED_PACKAGE: app.gigflow.driver
+          EXPECTED_CODE: ${{ steps.ver.outputs.code }}
+          EXPECTED_VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          AAPT2=$(find "$ANDROID_HOME/build-tools" -name aapt2 | sort -V | tail -1)
+          BADGING=$("$AAPT2" dump badging "$APK")
+          PKG=$(printf '%s\n' "$BADGING" | sed -nE "s/^package: name='([^']+)'.*/\1/p")
+          CODE=$(printf '%s\n' "$BADGING" | sed -nE "s/.*versionCode='([0-9]+)'.*/\1/p")
+          NAME=$(printf '%s\n' "$BADGING" | sed -nE "s/.*versionName='([^']+)'.*/\1/p")
+          echo "APK package=$PKG versionName=$NAME versionCode=$CODE"
+          if [ "$PKG" != "$EXPECTED_PACKAGE" ]; then
+            echo "::error::APK package is '$PKG', expected '$EXPECTED_PACKAGE' (a .debug build would install as a separate app)"
+            exit 1
+          fi
+          if [ "$CODE" != "$EXPECTED_CODE" ]; then
+            echo "::error::APK versionCode is '$CODE', expected '$EXPECTED_CODE'"
+            exit 1
+          fi
+          if [ "$NAME" != "$EXPECTED_VERSION" ]; then
+            echo "::error::APK versionName is '$NAME', expected '$EXPECTED_VERSION'"
+            exit 1
+          fi
+          echo "APK identity matches the release version."
+
       - name: Rename APK for GigFlow Updater
         run: |
           cp android/app/build/outputs/apk/release/app-release.apk "GigFlow-${{ steps.ver.outputs.version }}.apk"
