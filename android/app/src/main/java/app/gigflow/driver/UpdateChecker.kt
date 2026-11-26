@@ -26,7 +26,7 @@ import java.util.concurrent.Executors
  */
 object UpdateChecker {
 
-    private const val REPO = "w0wzahh/GigFlow"
+    private const val REPO = "amvuser81/GigFlow"
     private const val API = "https://api.github.com/repos/$REPO/releases/latest"
     private const val APK_NAME_PREFIX = "gigflow-" // release assets are lowercase: gigflow-vX.Y.Z.apk
     private val io = Executors.newSingleThreadExecutor()

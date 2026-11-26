@@ -13,7 +13,7 @@ where you actually drive.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Android-8.0%2B-3DDC84)](android)
-[![Release](https://img.shields.io/github/v/release/w0wzahh/GigFlow)](https://github.com/w0wzahh/GigFlow/releases)
+[![Release](https://img.shields.io/github/v/release/amvuser81/GigFlow)](https://github.com/amvuser81/GigFlow/releases)
 [![Open Source](https://img.shields.io/badge/Open%20Source-❤-blueviolet)](https://ko-fi.com/w0wzahh)
 
 </div>
@@ -80,7 +80,7 @@ Everything runs on-device. No account required, no subscription, no tracking.
 ## Install
 
 Grab the latest APK from
-[Releases](https://github.com/w0wzahh/GigFlow/releases) — Android 8.0+.
+[Releases](https://github.com/amvuser81/GigFlow/releases) — Android 8.0+.
 
 Setup takes under a minute — the app walks you through it in the Assist tab:
 
