@@ -102,6 +102,45 @@ cd android
 gradle assembleDebug   # → app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## Releasing
+
+Releases are cut on purpose, never on a push. Pushing to `master` only
+compiles a debug APK as a check; to publish, run the workflow by hand from
+**Actions → Build & Release APK → Run workflow**, or:
+
+```bash
+gh workflow run build-apk.yml -f version=1.8.0   # omit -f version to bump the patch
+```
+
+The run stamps `versionName` / `versionCode` into `android/app/build.gradle.kts`,
+builds a release APK signed with the repo's release key, verifies the
+signature, commits the bump back to `master`, tags it, and publishes the
+release.
+
+Signing is pinned to four repository secrets. The key must stay the same
+forever — a different key means installed copies can no longer update in
+place:
+
+| Secret | Contents |
+|---|---|
+| `KEYSTORE_BASE64` | `base64 -w0 release.jks` |
+| `KEYSTORE_PASSWORD` | keystore password |
+| `KEY_ALIAS` | key alias inside the keystore |
+| `KEY_PASSWORD` | key password |
+
+Create them once:
+
+```bash
+keytool -genkeypair -v -keystore release.jks -alias gigflow \
+  -keyalg RSA -keysize 4096 -validity 10000
+base64 -w0 release.jks | gh secret set KEYSTORE_BASE64
+gh secret set KEYSTORE_PASSWORD
+gh secret set KEY_ALIAS
+gh secret set KEY_PASSWORD
+```
+
+Keep `release.jks` backed up somewhere safe and out of the repo.
+
 ## How it works
 
 - **Accessibility service** scoped to the watched driver-app packages —

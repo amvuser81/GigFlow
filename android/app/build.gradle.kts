@@ -2,6 +2,11 @@ plugins {
     id("com.android.application")
 }
 
+// Release signing is supplied by CI (see .github/workflows/build-apk.yml).
+// Without GIGFLOW_KEYSTORE the release variant builds unsigned, which is fine
+// for local experiments but must never be published.
+val releaseKeystore = System.getenv("GIGFLOW_KEYSTORE")
+
 android {
     namespace = "app.gigflow.driver"
     compileSdk = 36
@@ -14,10 +19,24 @@ android {
         versionName = "1.7.14"
     }
 
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("GIGFLOW_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("GIGFLOW_KEY_ALIAS")
+                keyPassword = System.getenv("GIGFLOW_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             proguardFiles("proguard-rules.pro")
+            if (releaseKeystore != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
         debug {
             applicationIdSuffix = ".debug"
@@ -34,4 +53,3 @@ dependencies {
     // FileProvider for handing the downloaded update APK to the installer.
     implementation("androidx.core:core:1.13.1")
 }
-

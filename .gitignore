@@ -53,6 +53,10 @@ next-env.d.ts
 /android/.gradle/
 *.apk
 
+# signing material — the release key lives only in CI secrets
+*.jks
+*.keystore
+
 # Local release builds (uploaded to GitHub Releases)
 releases/
 
