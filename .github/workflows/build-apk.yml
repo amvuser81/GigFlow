@@ -141,11 +141,32 @@ jobs:
         run: ./gradlew --no-daemon assembleRelease
 
       - name: Verify signature
+        env:
+          # SHA-256 of the release key inside release.jks (alias "gigflow").
+          # This is pinned on purpose: re-keying silently breaks in-place
+          # updates for every installed copy, so a changed key must be a
+          # deliberate, reviewed edit to this line — never an accident.
+          EXPECTED_CERT_SHA256: c27f31c698ff74b57b36cd87dd9aef9bbb00a59161ffc324475e46c5a73eb715
         run: |
+          set -euo pipefail
           APK=android/app/build/outputs/apk/release/app-release.apk
           test -f "$APK"
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)
-          "$APKSIGNER" verify --print-certs "$APK" | head -5
+          CERTS=$("$APKSIGNER" verify --print-certs "$APK")
+          printf '%s\n' "$CERTS" | grep -iE "certificate (DN|SHA-256)" | head -4 || true
+          ACTUAL=$(printf '%s\n' "$CERTS" \
+            | sed -nE 's/.*certificate SHA-256 digest: *([0-9a-fA-F:]+).*/\1/p' \
+            | head -1 | tr -d ':' | tr 'A-F' 'a-f')
+          if [ -z "$ACTUAL" ]; then
+            echo "::error::Could not read a signing certificate from the APK."
+            exit 1
+          fi
+          echo "APK certificate SHA-256: $ACTUAL"
+          if [ "$ACTUAL" != "$EXPECTED_CERT_SHA256" ]; then
+            echo "::error::APK is signed by $ACTUAL but the pinned release key is $EXPECTED_CERT_SHA256. Installing this would fail over every existing copy — refusing to publish."
+            exit 1
+          fi
+          echo "Signature certificate matches the pinned release key."
 
       - name: Assert APK identity
         env:
