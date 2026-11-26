@@ -8,12 +8,18 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: build-apk
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -21,15 +27,30 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Bump versionName and versionCode
+      - name: Compute next version
+        id: ver
         run: |
-          VER="1.7.${{ github.run_number }}"
-          CODE=$((100 + ${{ github.run_number }}))
-          echo "APP_VER=$VER" >> $GITHUB_ENV
-          sed -i -E "s/versionName[[:space:]]*=[[:space:]]*\"[^\"]+\"/versionName = \"$VER\"/" android/app/build.gradle*
-          sed -i -E "s/versionName[[:space:]]+\"[^\"]+\"/versionName \"$VER\"/" android/app/build.gradle*
-          sed -i -E "s/versionCode[[:space:]]*=[[:space:]]*[0-9]+/versionCode = $CODE/" android/app/build.gradle*
-          sed -i -E "s/versionCode[[:space:]]+[0-9]+/versionCode $CODE/" android/app/build.gradle*
+          set -euo pipefail
+          GRADLE=android/app/build.gradle.kts
+          FILE_VER=$(sed -nE 's/.*versionName[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$GRADLE" | head -1)
+          TAG_VER=$(git tag -l 'v*' --sort=-v:refname | head -1 | sed 's/^v//')
+          BASE=$(printf '%s\n%s\n' "${FILE_VER:-0.0.0}" "${TAG_VER:-0.0.0}" | sort -V | tail -1)
+          MAJOR=$(echo "$BASE" | cut -d. -f1)
+          MINOR=$(echo "$BASE" | cut -d. -f2)
+          PATCH=$(echo "$BASE" | cut -d. -f3)
+          PATCH=$(( ${PATCH:-0} + 1 ))
+          VER="$MAJOR.$MINOR.$PATCH"
+          CODE=$(( MAJOR * 10000 + MINOR * 100 + PATCH ))
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "gradle=$FILE_VER tag=$TAG_VER -> build $VER ($CODE)"
+
+      - name: Stamp version into build.gradle
+        run: |
+          GRADLE=android/app/build.gradle.kts
+          sed -i -E "s/versionName[[:space:]]*=[[:space:]]*\"[^\"]+\"/versionName = \"${{ steps.ver.outputs.version }}\"/" "$GRADLE"
+          sed -i -E "s/versionCode[[:space:]]*=[[:space:]]*[0-9]+/versionCode = ${{ steps.ver.outputs.code }}/" "$GRADLE"
+          grep -nE 'versionName|versionCode' "$GRADLE"
 
       - name: Cache debug keystore for consistent signing
         uses: actions/cache@v4
@@ -52,18 +73,28 @@ jobs:
 
       - name: Rename APK for GigFlow Updater
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk "GigFlow-${{ env.APP_VER }}.apk"
+          cp android/app/build/outputs/apk/debug/app-debug.apk "GigFlow-${{ steps.ver.outputs.version }}.apk"
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v5
         with:
-          name: GigFlow-${{ env.APP_VER }}
-          path: GigFlow-${{ env.APP_VER }}.apk
+          name: GigFlow-${{ steps.ver.outputs.version }}
+          path: GigFlow-${{ steps.ver.outputs.version }}.apk
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add android/app/build.gradle.kts
+          git commit -m "Release v${{ steps.ver.outputs.version }}"
+          git tag "v${{ steps.ver.outputs.version }}"
+          git push origin "HEAD:master"
+          git push origin "v${{ steps.ver.outputs.version }}"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ env.APP_VER }}
-          name: GigFlow v${{ env.APP_VER }}
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: GigFlow v${{ steps.ver.outputs.version }}
           body: Automated build from commit ${{ github.sha }}
-          files: GigFlow-${{ env.APP_VER }}.apk
+          files: GigFlow-${{ steps.ver.outputs.version }}.apk
