@@ -159,14 +159,26 @@ jobs:
           path: GigFlow-${{ steps.ver.outputs.version }}.apk
 
       - name: Commit version bump
+        env:
+          VER: ${{ steps.ver.outputs.version }}
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add android/app/build.gradle.kts
-          git commit -m "Release v${{ steps.ver.outputs.version }}"
-          git tag "v${{ steps.ver.outputs.version }}"
-          git push origin "HEAD:master"
-          git push origin "v${{ steps.ver.outputs.version }}"
+          # Idempotent: a retried run may find the version already committed.
+          if git diff --staged --quiet; then
+            echo "build.gradle already at $VER — no bump commit needed"
+          else
+            git commit -m "Release v$VER"
+            git push origin "HEAD:master"
+          fi
+          if git ls-remote --tags origin "refs/tags/v$VER" | grep -q .; then
+            echo "tag v$VER already exists on remote"
+          else
+            git tag "v$VER"
+            git push origin "refs/tags/v$VER"
+          fi
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
