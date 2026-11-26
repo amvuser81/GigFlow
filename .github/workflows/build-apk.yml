@@ -33,12 +33,27 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Set up Gradle with dependency caching
+        uses: gradle/actions/setup-gradle@v4
+
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
       - name: Build Debug APK
         working-directory: android
-        run: ./gradlew --no-daemon assembleDebug
+        run: |
+          set -o pipefail
+          LOG="$RUNNER_TEMP/gradle-build.log"
+          for attempt in 1 2; do
+            if ./gradlew --no-daemon assembleDebug 2>&1 | tee "$LOG"; then exit 0; fi
+            if [ "$attempt" = 2 ]; then exit 1; fi
+            if grep -qiE "429|Could not resolve|Could not GET|timed out|Connection reset" "$LOG"; then
+              echo "::warning::Transient dependency failure (Maven Central) on attempt $attempt — retrying once in 30s"
+              sleep 30
+            else
+              exit 1
+            fi
+          done
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v5
@@ -128,6 +143,9 @@ jobs:
           printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
           test -s "$RUNNER_TEMP/release.jks"
 
+      - name: Set up Gradle with dependency caching
+        uses: gradle/actions/setup-gradle@v4
+
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
@@ -138,7 +156,19 @@ jobs:
           GIGFLOW_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           GIGFLOW_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           GIGFLOW_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew --no-daemon assembleRelease
+        run: |
+          set -o pipefail
+          LOG="$RUNNER_TEMP/gradle-build.log"
+          for attempt in 1 2; do
+            if ./gradlew --no-daemon assembleRelease 2>&1 | tee "$LOG"; then exit 0; fi
+            if [ "$attempt" = 2 ]; then exit 1; fi
+            if grep -qiE "429|Could not resolve|Could not GET|timed out|Connection reset" "$LOG"; then
+              echo "::warning::Transient dependency failure (Maven Central) on attempt $attempt — retrying once in 30s"
+              sleep 30
+            else
+              exit 1
+            fi
+          done
 
       - name: Verify signature
         env:
