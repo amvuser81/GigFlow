@@ -35,16 +35,10 @@ jobs:
 
       - name: Make gradlew executable
         run: chmod +x android/gradlew
-        continue-on-error: true
 
       - name: Build Debug APK
         working-directory: android
-        run: |
-          if [ -f "./gradlew" ]; then
-            ./gradlew assembleDebug
-          else
-            gradle assembleDebug
-          fi
+        run: ./gradlew --no-daemon assembleDebug
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v5
@@ -85,7 +79,12 @@ jobs:
             MAJOR=$(echo "$BASE" | cut -d. -f1)
             MINOR=$(echo "$BASE" | cut -d. -f2)
             PATCH=$(echo "$BASE" | cut -d. -f3)
-            VER="$MAJOR.$MINOR.$(( ${PATCH:-0} + 1 ))"
+            PATCH=$(( ${PATCH:-0} + 1 ))
+            # Base-100 rollover: the patch field is never allowed to reach 100,
+            # so 1.7.99 becomes 1.8.0 instead of a colliding 1.7.100.
+            if [ "$PATCH" -ge 100 ]; then PATCH=0; MINOR=$(( MINOR + 1 )); fi
+            if [ "$MINOR" -ge 100 ]; then MINOR=0; MAJOR=$(( MAJOR + 1 )); fi
+            VER="$MAJOR.$MINOR.$PATCH"
           fi
 
           if ! echo "$VER" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
@@ -100,6 +99,12 @@ jobs:
           MAJOR=$(echo "$VER" | cut -d. -f1)
           MINOR=$(echo "$VER" | cut -d. -f2)
           PATCH=$(echo "$VER" | cut -d. -f3)
+          # major*10000 + minor*100 + patch is injective only while minor and
+          # patch stay below 100; auto-releases roll over, explicit ones must comply.
+          if [ "$MINOR" -ge 100 ] || [ "$PATCH" -ge 100 ]; then
+            echo "::error::$VER cannot be encoded without a versionCode collision. Keep minor and patch below 100, e.g. $(( MAJOR + 1 )).0.0."
+            exit 1
+          fi
           CODE=$(( MAJOR * 10000 + MINOR * 100 + PATCH ))
           echo "version=$VER" >> "$GITHUB_OUTPUT"
           echo "code=$CODE" >> "$GITHUB_OUTPUT"
@@ -125,7 +130,6 @@ jobs:
 
       - name: Make gradlew executable
         run: chmod +x android/gradlew
-        continue-on-error: true
 
       - name: Build signed Release APK
         working-directory: android
@@ -134,12 +138,7 @@ jobs:
           GIGFLOW_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           GIGFLOW_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           GIGFLOW_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          if [ -f "./gradlew" ]; then
-            ./gradlew assembleRelease
-          else
-            gradle assembleRelease
-          fi
+        run: ./gradlew --no-daemon assembleRelease
 
       - name: Verify signature
         run: |

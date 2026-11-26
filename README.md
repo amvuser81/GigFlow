@@ -99,7 +99,7 @@ Or build it yourself:
 cd android
 # android/local.properties must point at your SDK:
 #   sdk.dir=C:/Users/<you>/AppData/Local/Android/Sdk
-gradle assembleDebug   # → app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleDebug   # → app/build/outputs/apk/debug/app-debug.apk
 ```
 
 ## Releasing
