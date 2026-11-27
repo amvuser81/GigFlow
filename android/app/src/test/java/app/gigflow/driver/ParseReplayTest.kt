@@ -130,14 +130,14 @@ class ParseReplayTest {
         // An Uber-style card whose × is an unlabeled, id-less clickable node.
         val x = OfferParser.FlatNode("", null, Bounds(1000, 20, 1080, 100), true)
         val nodes = listOf(
-            OfferParser.FlatNode("1 850 $", "app:id/payout", Bounds(0, 100, 800, 200), false),
+            OfferParser.FlatNode("18,50 $", "app:id/payout", Bounds(0, 100, 800, 200), false),
             OfferParser.FlatNode("12,4 km", null, Bounds(0, 200, 800, 260), false),
             OfferParser.FlatNode("22 perc", null, Bounds(0, 260, 800, 320), false),
             x,
         )
         val pkg = "com.ubercab.driver"
         val plain = OfferParser.parse(pkg, nodes)!!
-        assertEquals(185_000, plain.payoutCents)
+        assertEquals(1_850, plain.payoutCents)
         assertNull("an unnamed × is invisible to the label search", plain.declineNode)
 
         val hint = ParseHints.Hint(
@@ -147,7 +147,7 @@ class ParseReplayTest {
         )
         val taught = OfferParser.parse(pkg, nodes, hint = hint)!!
         assertNotNull("the taught × must reach the offer", taught.declineNode)
-        assertEquals("taught buttons never touch the price", 185_000, taught.payoutCents)
+        assertEquals("taught buttons never touch the price", 1_850, taught.payoutCents)
     }
 
     @Test
