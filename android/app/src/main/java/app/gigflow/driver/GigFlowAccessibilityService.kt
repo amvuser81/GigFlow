@@ -35,6 +35,12 @@ class GigFlowAccessibilityService : AccessibilityService() {
     private var localDb: LocalDb? = null
     private var countdownTicker: Runnable? = null
 
+    /** Driver apps GigFlow reads — the rest of the event stream is only used to
+     *  notice that the driver app left the screen. */
+    private val watched: Set<String> by lazy {
+        resources.getStringArray(R.array.watched_packages).toSet()
+    }
+
     // Auto-shift tracking state
     private var lastDriverAppAt = 0L
     private var idleStopCheck: Runnable? = null
@@ -51,6 +57,9 @@ class GigFlowAccessibilityService : AccessibilityService() {
         /** Re-read delays when a screen has money but didn't parse — offer
          *  cards animate in, so the first read can precede the text. */
         private val RETRY_DELAYS_MS = longArrayOf(250L, 700L)
+
+        /** A verdict never outlives this, even if the card behind it lingers. */
+        private const val MAX_OVERLAY_MS = 30_000L
 
         /** Live instance while the service is enabled — null otherwise. */
         @Volatile var instance: GigFlowAccessibilityService? = null
@@ -109,10 +118,9 @@ class GigFlowAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * UI-initiated teardown. Our own package's events never reach
-     * onAccessibilityEvent (manifest filter), so turning monitoring off
-     * inside the app wouldn't clear the overlay/pending taps — the
-     * Monitoring toggle calls this directly.
+     * UI-initiated teardown, for the same frame the switch is flipped: don't
+     * wait for the next accessibility event to clear the overlay and any
+     * pending auto-accept tap.
      */
     fun stopWatching() = handler.post { offerGone() }
 
@@ -157,13 +165,26 @@ class GigFlowAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
-        android.util.Log.d("GigFlowSvc", "event pkg=${event.packageName} type=${event.eventType}")
         val pkg = event.packageName?.toString() ?: return
         val now = System.currentTimeMillis()
 
-        // Events only arrive from watched driver apps (manifest filters), so
-        // any event means the driver is inside a work app — feed the
-        // auto-shift tracker before anything else.
+        // The Monitoring switch is the master gate. Android keeps an enabled
+        // service bound, so events keep arriving after it's turned off; every
+        // one of them has to be inert — no scan, no shift tracking, no overlay.
+        if (!settings.enabled) {
+            offerGone()
+            return
+        }
+
+        // Not a driver app: the verdict belongs to a card that is no longer on
+        // screen, so drop it. This is what hides the overlay when the user
+        // leaves the app, opens the launcher, or switches to another app.
+        if (pkg !in watched) {
+            if (activeOffer != null) offerGone()
+            return
+        }
+
+        // A driver app is in front — feed the auto-shift tracker.
         onDriverAppSeen(now)
 
         if (now - lastScanAt < 350) return // throttle contentChanged storms
@@ -297,16 +318,16 @@ class GigFlowAccessibilityService : AccessibilityService() {
             overlay.hide()
         }
 
-        // Optional overlay timeout — 0 = stay until the card disappears.
+        // Optional overlay timeout — 0 = stay until the card disappears, and
+        // even then never past MAX_OVERLAY_MS: a verdict for an offer that is
+        // long gone is worse than no verdict.
         val secs = prefs.overlaySeconds
-        if (secs > 0) {
-            val token = offer.fingerprint
-            hideToken = token
-            hideRunnable?.let { handler.removeCallbacks(it) }
-            val r = Runnable { if (hideToken == token) overlay.hide() }
-            hideRunnable = r
-            handler.postDelayed(r, secs * 1000L)
-        }
+        val token = offer.fingerprint
+        hideToken = token
+        hideRunnable?.let { handler.removeCallbacks(it) }
+        val r = Runnable { if (hideToken == token) overlay.hide() }
+        hideRunnable = r
+        handler.postDelayed(r, if (secs > 0) secs * 1000L else MAX_OVERLAY_MS)
 
         // Automation: only when the user explicitly enabled it, and only when
         // we actually found the button's bounds. Auto-accept runs on the
