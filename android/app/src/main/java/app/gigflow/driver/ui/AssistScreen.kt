@@ -215,7 +215,10 @@ class AssistScreen(
                 setPadding(0, dp(ctx, 2f), 0, dp(ctx, 2f))
             })
         }
-        if (snap.nodes.isNotEmpty()) {
+        // Only meaningful on a miss: the parser never consults a hint when its
+        // own heuristics produce an offer, so teaching a working screen would
+        // be a no-op the user can't see the result of.
+        if (snap.outcome == "miss" && snap.nodes.isNotEmpty()) {
             col.addView(TextView(ctx).apply {
                 text = "Teach this screen"
                 textSize = Ios.T_BODY; setTypeface(typeface, Typeface.BOLD)
@@ -282,7 +285,9 @@ class AssistScreen(
             )
         }
         if (flat.isEmpty()) return
-        val screen = ParseHints.screenKey(flat)
+        // The key captured with the snapshot wins: it was computed before the
+        // 80-node cap, so it matches what a live scan produces.
+        val screen = snap.screen.ifBlank { ParseHints.screenKey(flat) }
         val curSymbol = settings.currencySymbol
         val extraRe = OfferParser.extraMoney(settings.currencyCode, curSymbol)
 
@@ -355,7 +360,7 @@ class AssistScreen(
             }
             col.addView(chips)
 
-            flat.take(60).forEachIndexed { i, n ->
+            flat.forEachIndexed { i, n ->
                 val anchor = ParseHints.anchor(flat, i)
                 val role = picks.entries.firstOrNull { it.value == anchor }?.key
                 col.addView(TextView(ctx).apply {

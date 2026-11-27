@@ -1,6 +1,7 @@
 package app.gigflow.driver
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -101,6 +102,19 @@ class ParseReplayTest {
                 assertEquals("${f.name}: duration changed by hint $i", b.durationMin!!, g.durationMin!!, 0.001)
             }
         }
+    }
+
+    @Test
+    fun screenKeysDistinguishLayoutsAndRespectOrderWithoutIds() {
+        val a = ReplayFixtures.woltHu.nodes
+        val b = ReplayFixtures.uberUs.nodes
+        assertNotEquals(ParseHints.screenKey(a), ParseHints.screenKey(b))
+        // View ids identify the layout, so node order must not matter.
+        assertEquals(ParseHints.screenKey(a), ParseHints.screenKey(a.reversed()))
+        // Without ids the key is the wording skeleton, and order matters there
+        // because the anchors are positional.
+        val noIds = a.map { it.copy(viewId = null) }
+        assertNotEquals(ParseHints.screenKey(noIds), ParseHints.screenKey(noIds.reversed()))
     }
 
     @Test

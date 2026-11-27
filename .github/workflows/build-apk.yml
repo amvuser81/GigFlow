@@ -160,7 +160,9 @@ jobs:
           set -o pipefail
           LOG="$RUNNER_TEMP/gradle-build.log"
           for attempt in 1 2; do
-            if ./gradlew --no-daemon assembleRelease 2>&1 | tee "$LOG"; then exit 0; fi
+            # Tests gate the release too: the replay suite is what guarantees a
+            # taught hint can't change a screen that already parses.
+            if ./gradlew --no-daemon assembleRelease testDebugUnitTest 2>&1 | tee "$LOG"; then exit 0; fi
             if [ "$attempt" = 2 ]; then exit 1; fi
             if grep -qiE "429|Could not resolve|Could not GET|timed out|Connection reset" "$LOG"; then
               echo "::warning::Transient dependency failure (Maven Central) on attempt $attempt — retrying once in 30s"

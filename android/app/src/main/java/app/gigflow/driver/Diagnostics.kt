@@ -40,6 +40,9 @@ object Diagnostics {
         val outcome: String, // "offer" | "miss" | "idle"
         val texts: List<String>,
         val nodes: List<Node> = emptyList(),
+        /** [ParseHints.screenKey] of the full node list at capture time — the
+         *  teach flow keys a hint on this. Empty for old/text-only snapshots. */
+        val screen: String = "",
         /** Why the parser produced (or refused) a result, one line per step. */
         val decision: List<String> = emptyList(),
     )
@@ -53,7 +56,7 @@ object Diagnostics {
 
     /** Text-only snapshot — used when the window itself wasn't readable. */
     fun record(ctx: Context, pkg: String, outcome: String, texts: List<String>) =
-        write(ctx, pkg, outcome, texts, emptyList(), emptyList())
+        write(ctx, pkg, outcome, texts, emptyList(), "", emptyList())
 
     /** Full snapshot: every node plus the parser's decision trail. */
     fun record(
@@ -67,7 +70,10 @@ object Diagnostics {
         pkg,
         outcome,
         nodes.map { it.text },
-        nodes.take(MAX_NODES).map { n ->
+        // Keyed from the full list: the cap below could drop the ids a
+        // signature computed later from the snapshot would rely on.
+        screen = ParseHints.screenKey(nodes),
+        nodes = nodes.take(MAX_NODES).map { n ->
             Node(
                 text = n.text,
                 viewId = n.viewId,
@@ -75,7 +81,7 @@ object Diagnostics {
                 clickable = n.clickable,
             )
         },
-        decision,
+        decision = decision,
     )
 
     private fun write(
@@ -84,6 +90,7 @@ object Diagnostics {
         outcome: String,
         texts: List<String>,
         nodes: List<Node>,
+        screen: String,
         decision: List<String>,
     ) {
         val prefs = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
@@ -118,6 +125,7 @@ object Diagnostics {
             .put("at", System.currentTimeMillis())
             .put("outcome", outcome)
             .put("texts", joined)
+            .put("screen", screen)
             .put("nodes", nodeArr)
             .put("decision", decisionArr)
         prefs.edit().putString(KEY, all.put(pkg, o).toString()).apply()
@@ -144,6 +152,7 @@ object Diagnostics {
                     }
                 }
             } ?: emptyList(),
+            screen = o.optString("screen"),
             decision = o.optJSONArray("decision")?.let { arr ->
                 (0 until arr.length()).map { arr.optString(it) }
             } ?: emptyList(),

@@ -30,10 +30,7 @@ object ParseHints {
         val accept: String? = null,
         val decline: String? = null,
         val taughtAt: Long = System.currentTimeMillis(),
-    ) {
-        val roles: Int
-            get() = listOfNotNull(payout, distance, duration, accept, decline).size
-    }
+    )
 
     /**
      * Node anchor: the view id when the app exposes one (stable across
@@ -57,15 +54,19 @@ object ParseHints {
         }
     }
 
+    private val DIGITS = Regex("""\d+(?:[.,]\d+)?""")
+
     /**
-     * Screen fingerprint: the lowest-sorting view ids on the screen. Text is
-     * useless here (amounts and names change every offer); view ids identify
-     * the layout. A short prefix rather than every id, so a snapshot that lost
-     * a few nodes (see Diagnostics.MAX_NODES) still matches the live screen.
+     * Screen fingerprint. View ids identify the layout; text doesn't (amounts
+     * change every offer). Apps that expose no ids fall back to their wording
+     * with digits masked, in tree order, so a different screen — or a
+     * reordered one, which would move an index anchor — keys differently.
      */
     fun screenKey(nodes: List<OfferParser.FlatNode>): String {
-        val ids = nodes.mapNotNull { it.viewId }.distinct().sorted().take(8)
-        return if (ids.isEmpty()) "none" else ids.joinToString(",")
+        val ids = nodes.mapNotNull { it.viewId }.distinct().sorted().take(40)
+        if (ids.isNotEmpty()) return "v:" + ids.joinToString(",")
+        val shape = nodes.map { DIGITS.replace(it.text, "#") }.distinct().take(8)
+        return "t:" + shape.joinToString("|")
     }
 
     // --- Storage -------------------------------------------------------------
@@ -131,12 +132,12 @@ object ParseHints {
         cache = map
     }
 
-    fun all(ctx: Context, pkg: String): List<Hint> = load(ctx)[pkg] ?: emptyList()
+    private fun forApp(ctx: Context, pkg: String): List<Hint> = load(ctx)[pkg] ?: emptyList()
 
     /** The hint taught for exactly this layout, if any. */
     fun forScreen(ctx: Context, pkg: String, nodes: List<OfferParser.FlatNode>): Hint? {
         val key = screenKey(nodes)
-        return all(ctx, pkg).firstOrNull { it.screen == key }
+        return forApp(ctx, pkg).firstOrNull { it.screen == key }
     }
 
     fun save(ctx: Context, hint: Hint) {
