@@ -34,9 +34,10 @@ class GigFlowAccessibilityService : AccessibilityService() {
     private var teach: TeachOverlay? = null
     private var teachSession: TeachSession? = null
 
-    /** Last screen the teach bar was offered for, and when. */
+    /** Last screen the teach bar was offered for, so it can't re-pop on the
+     *  same screen every few seconds while the driver stays on it. */
     private var lastMissKey = ""
-    private var lastMissAt = 0L
+    private var lastMissPkg = ""
 
     private val handler = Handler(Looper.getMainLooper())
     private var hideRunnable: Runnable? = null
@@ -74,9 +75,6 @@ class GigFlowAccessibilityService : AccessibilityService() {
         /** Package name of the synthetic offer from the Assist screen. */
         private const val TEST_PKG = "app.gigflow.test"
 
-        /** Don't offer the same unreadable screen more than once per window. */
-        private const val MISS_BAR_COOLDOWN_MS = 30_000L
-
         /** A miss bar gives up on its own, like a verdict. */
         private const val MISS_BAR_MS = 20_000L
 
@@ -102,6 +100,11 @@ class GigFlowAccessibilityService : AccessibilityService() {
      */
     fun testOffer() {
         handler.post {
+            // Nothing runs while monitoring is off — including the dry run.
+            if (!settings.enabled) {
+                toast("Monitoring is off — turn it on first")
+                return@post
+            }
             val dead = NodeRef(Bounds(8, 1150, 14, 1190), "test")
             val o = DetectedOffer(
                 appPackage = TEST_PKG,
@@ -240,13 +243,24 @@ class GigFlowAccessibilityService : AccessibilityService() {
      * is where teaching matters most, and the card is only live right now —
      * there is no other moment to point at it.
      */
-    private fun maybeTeachBar(pkg: String, nodes: List<OfferParser.FlatNode>, now: Long) {
+    private fun maybeTeachBar(pkg: String, nodes: List<OfferParser.FlatNode>, taught: Boolean) {
         if (teachSession != null) return
         if (activeOffer != null) return // a verdict is already on screen
+        if (pkg != lastMissPkg) {
+            lastMissPkg = pkg
+            lastMissKey = ""
+        }
         val key = ParseHints.screenKey(nodes)
-        if (key == lastMissKey && now - lastMissAt < MISS_BAR_COOLDOWN_MS) return
+        if (key == lastMissKey) return // same screen — already offered once
+        // An earnings or wallet screen carries money but no request cues;
+        // teaching on it is noise. A layout the driver taught is the exception.
+        if (!taught && !OfferParser.looksLikeOfferForTeaching(
+                nodes,
+                OfferParser.extraMoney(settings.currencyCode, settings.currencySymbol),
+                settings.currencySymbol,
+            )
+        ) return
         lastMissKey = key
-        lastMissAt = now
         overlay.showMiss(
             onTeach = { startTeach(pkg) },
             onDismiss = { overlay.hide() },
@@ -332,10 +346,17 @@ class GigFlowAccessibilityService : AccessibilityService() {
             if (pkg == packageName) {
                 if (ourActivityInFront()) {
                     endTeach()
-                    offerGone()
+                    // The synthetic test offer is meant to be watched from
+                    // inside GigFlow — its own activity must not wipe it.
+                    val synthetic = activeOffer?.offer?.appPackage == TEST_PKG
+                    if (!synthetic) offerGone()
                 }
                 return
             }
+            // Left the driver app: a bar offered here shouldn't block the same
+            // screen being offered again when the driver comes back.
+            lastMissPkg = ""
+            lastMissKey = ""
             // A real verdict dies with its app. The synthetic test offer is the
             // exception — it is shown while this app is in front precisely so
             // the user can watch it run, so our own events must not wipe it.
@@ -408,7 +429,7 @@ class GigFlowAccessibilityService : AccessibilityService() {
                 return
             }
             maybeOfferGone(now)
-            if (hasMoney) maybeTeachBar(pkg, nodes, now) else hideMissBar()
+            if (hasMoney) maybeTeachBar(pkg, nodes, hint != null) else hideMissBar()
             return
         }
         Diagnostics.record(this, pkg, "offer", nodes, decision)

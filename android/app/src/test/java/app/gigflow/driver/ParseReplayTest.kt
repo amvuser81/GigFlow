@@ -1,6 +1,7 @@
 package app.gigflow.driver
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -364,6 +365,52 @@ class ParseReplayTest {
         assertNull(
             "a mapping whose anchors all resolve is not stale",
             ParseHints.staleReason(gone.copy(payout = "id:app:id/amount@0"), nodes),
+        )
+    }
+
+    @Test
+    fun anEarningsScreenIsNotAnOffer() {
+        // "New offer $94": the day's total and "h online" sit above a trip
+        // list, and every one of those figures is plausible on its own.
+        val nodes = listOf(
+            OfferParser.FlatNode("You've earned today", null, Bounds(0, 60, 900, 120), false),
+            OfferParser.FlatNode("\$94.00", null, Bounds(40, 130, 400, 220), false),
+            OfferParser.FlatNode("4.2 h online", null, Bounds(40, 240, 400, 290), false),
+            OfferParser.FlatNode("Trip · \$12.40 · 8.2 mi", null, Bounds(40, 400, 900, 460), false),
+            OfferParser.FlatNode("Trip · \$9.80 · 5.1 mi", null, Bounds(40, 470, 900, 530), false),
+        )
+        assertNull(
+            "a day's earnings must not read as an offer",
+            OfferParser.parse("com.ubercab.driver", nodes),
+        )
+        assertFalse(
+            "teaching belongs on offers, not on a wallet",
+            OfferParser.looksLikeOfferForTeaching(nodes),
+        )
+    }
+
+    @Test
+    fun aLocalizedTripListIsStillNotAnOffer() {
+        // No English summary words: the screen is recognised by carrying a
+        // list of trips rather than one.
+        fun trip(fare: String, km: String, perc: String, y: Int) = listOf(
+            OfferParser.FlatNode(fare, null, Bounds(0, y, 300, y + 40), false),
+            OfferParser.FlatNode(km, null, Bounds(0, y + 40, 300, y + 80), false),
+            OfferParser.FlatNode(perc, null, Bounds(300, y + 40, 600, y + 80), false),
+        )
+        val nodes = trip("3 200 Ft", "8,2 km", "22 perc", 0) +
+            trip("2 900 Ft", "6,1 km", "19 perc", 100) +
+            trip("4 100 Ft", "9,4 km", "25 perc", 200) +
+            trip("1 750 Ft", "3,3 km", "12 perc", 300)
+        assertNull(OfferParser.parse("com.wolt.driver", nodes))
+        assertFalse(OfferParser.looksLikeOfferForTeaching(nodes))
+    }
+
+    @Test
+    fun anUnreadableOfferStillLooksWorthTeaching() {
+        assertTrue(
+            "request wording is what makes a miss teachable",
+            OfferParser.looksLikeOfferForTeaching(ReplayFixtures.bareNumbers.nodes),
         )
     }
 }

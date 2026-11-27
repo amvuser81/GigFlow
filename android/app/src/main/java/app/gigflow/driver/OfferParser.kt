@@ -164,6 +164,23 @@ object OfferParser {
         RegexOption.IGNORE_CASE,
     )
 
+    // A day's-work summary — earnings, wallet, balance — carries money and a
+    // length of time, and used to score as an offer: "new offer $94" for the
+    // total made today. These words don't appear on a live request card.
+    private val SUMMARY_WORDS = Regex(
+        """earned|earnings|you made|you've made|balance|wallet|this week|this month|""" +
+            """weekly|payout history|cash out|withdraw|online time|hours online|time online|""" +
+            """total today|today's total|completed trips|kereset|bevétel|einnahmen|guthaben|zarobk""",
+        RegexOption.IGNORE_CASE,
+    )
+
+    /** Wording that makes a screen a request rather than a money summary. */
+    private val OFFER_WORDS = Regex(
+        """new (offer|order|ride|request|job|delivery|trip)|incoming (offer|order|ride|request)|""" +
+            """ride request|order request|delivery request|fuvar|rendelés|auftrag|solicitud|заказ""",
+        RegexOption.IGNORE_CASE,
+    )
+
     /** Apps where the whole request card accepts on tap — no labelled button.
      *  Uber docs: "tap anywhere on the black bar"; Lyft: "tap anywhere". */
     private val TAP_ANYWHERE_PKGS = setOf("com.ubercab.driver", "com.lyft.android.driver")
@@ -200,6 +217,51 @@ object OfferParser {
             }
         }
         return out
+    }
+
+    /**
+     * Whether a screen that didn't parse still looks like a single offer worth
+     * teaching on: request wording, a decision label, or a countdown. A wallet
+     * or earnings screen has money but none of those, and a teach bar there is
+     * pure noise.
+     */
+    fun looksLikeOfferForTeaching(
+        nodes: List<FlatNode>,
+        extra: Regex? = null,
+        extraSymbol: String = "$",
+    ): Boolean {
+        if (looksLikeSummary(nodes, extra, extraSymbol)) return false
+        return nodes.any { n ->
+            OFFER_WORDS.containsMatchIn(n.text) ||
+                ACCEPT_WORDS.containsMatchIn(n.text) ||
+                DECLINE_WORDS.containsMatchIn(n.text) ||
+                RESERVE_ACCEPT.containsMatchIn(n.text) ||
+                EXPIRY.containsMatchIn(n.text)
+        }
+    }
+
+    /**
+     * A day's work, not one trip: summary wording, or several distances or pay
+     * figures. An offer card carries one of each — a trip list carries many.
+     */
+    private fun looksLikeSummary(
+        nodes: List<FlatNode>,
+        extra: Regex?,
+        extraSymbol: String,
+    ): Boolean {
+        var distanceish = 0
+        var money = 0
+        for (n in nodes) {
+            val t = n.text
+            if (SUMMARY_WORDS.containsMatchIn(t)) return true
+            if (MILES.containsMatchIn(t) || KM.containsMatchIn(t) ||
+                MINUTES.containsMatchIn(t) || HOURS_MIN.containsMatchIn(t)
+            ) {
+                distanceish++
+            }
+            if (moneyOf(t, extra, extraSymbol) != null) money++
+        }
+        return distanceish >= 4 || money >= 5
     }
 
     fun parse(
@@ -278,6 +340,14 @@ object OfferParser {
         }
         if (moneyNodes.isEmpty() && hint?.payout == null) {
             trace?.add("money=0 → not an offer")
+            return null
+        }
+
+        // Money on a wallet or an earnings screen is not an offer, and not a
+        // miss worth teaching either. A mapping the user made is still obeyed
+        // — that is an explicit statement that the screen is a card.
+        if (hint == null && looksLikeSummary(nodes, extra, extraSymbol)) {
+            trace?.add("summary screen (earnings/wallet) → not an offer")
             return null
         }
 

@@ -29,6 +29,9 @@ class AssistScreen(
     val screen = Screen(ctx, p, "Assistant")
     private val ctx: Context = ctx
 
+    /** Re-reads the status card when a switch changes the state it shows. */
+    private var refreshStatus: (() -> Unit)? = null
+
     private fun gap(h: Float) = View(ctx).apply {
         layoutParams = LinearLayout.LayoutParams(1, dp(ctx, h))
     }
@@ -69,46 +72,73 @@ class AssistScreen(
 
     private fun statusCard(): View {
         val card = Sections.card(ctx, p)
-        val on = OverlayController.isServiceEnabled(ctx)
+        val light = View(ctx)
+        val title = TextView(ctx).apply {
+            textSize = Ios.T_HEADLINE
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(p.label)
+        }
+        val subtitle = TextView(ctx).apply {
+            textSize = Ios.T_FOOTNOTE
+            setTextColor(p.label2)
+        }
         card.addView(LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
             setPadding(dp(ctx, 16f), dp(ctx, 14f), dp(ctx, 16f), dp(ctx, 14f))
-            addView(View(ctx).apply {
-                background = Ios.rounded(14f, if (on) p.green else p.red, ctx)
-                layoutParams = LinearLayout.LayoutParams(dp(ctx, 10f), dp(ctx, 10f))
-                    .apply { rightMargin = dp(ctx, 12f) }
-            })
+            addView(light, LinearLayout.LayoutParams(dp(ctx, 10f), dp(ctx, 10f))
+                .apply { rightMargin = dp(ctx, 12f) })
             addView(LinearLayout(ctx).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                addView(TextView(ctx).apply {
-                    text = if (on) "Assistant is on" else "Assistant is off"
-                    textSize = Ios.T_HEADLINE
-                    setTypeface(typeface, Typeface.BOLD)
-                    setTextColor(p.label)
-                })
-                addView(TextView(ctx).apply {
-                    text = if (on) "Scoring offers in your driver apps"
-                    else "Enable it to score and auto-act on offers"
-                    textSize = Ios.T_FOOTNOTE
-                    setTextColor(p.label2)
-                })
+                addView(title)
+                addView(subtitle)
             })
         })
         // Full-width button below the text — an inline button crowded the
-        // subtitle and clipped mid-word on narrower screens.
-        if (!on) {
-            card.addView(LinearLayout(ctx).apply {
-                setPadding(dp(ctx, 16f), 0, dp(ctx, 16f), dp(ctx, 14f))
-                val btn = iosButton(ctx, p, "Enable now — takes 10 seconds")
-                addView(btn, LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-                btn.setOnClickListener {
-                    ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                }
-            })
+        // subtitle and clipped mid-word on narrower screens. It is only about
+        // the accessibility permission; monitoring is its own switch below.
+        val enableRow = LinearLayout(ctx).apply {
+            setPadding(dp(ctx, 16f), 0, dp(ctx, 16f), dp(ctx, 14f))
+            val btn = iosButton(ctx, p, "Enable now — takes 10 seconds")
+            addView(btn, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+            btn.setOnClickListener {
+                ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
         }
+        card.addView(enableRow)
+
+        // The service being enabled is not the same as the assistant working:
+        // monitoring can be off with the service still on, and the card used to
+        // claim "is on" with a green light in exactly that state.
+        fun apply() {
+            val serviceOn = OverlayController.isServiceEnabled(ctx)
+            val monitoringOn = settings.enabled
+            val on = serviceOn && monitoringOn
+            light.background = Ios.rounded(
+                14f,
+                when {
+                    on -> p.green
+                    serviceOn -> p.orange
+                    else -> p.red
+                },
+                ctx,
+            )
+            title.text = when {
+                !serviceOn -> "Assistant is off"
+                !monitoringOn -> "Monitoring is off"
+                else -> "Assistant is on"
+            }
+            subtitle.text = when {
+                !serviceOn -> "Enable it to score and auto-act on offers"
+                !monitoringOn -> "The Monitoring switch below is off — no offer is scored"
+                else -> "Scoring offers in your driver apps"
+            }
+            enableRow.visibility = if (serviceOn) View.GONE else View.VISIBLE
+        }
+        refreshStatus = { apply() }
+        apply()
         return card
     }
 
@@ -677,6 +707,7 @@ class AssistScreen(
         val (r1, _) = Sections.switchRow(ctx, p, "Monitoring",
             "Score offers as they appear", settings.enabled) {
             settings.enabled = it
+            refreshStatus?.invoke()
             // Our own UI events never reach the service's event filter, so
             // tear the overlay down explicitly instead of waiting for the
             // next driver-app frame.
@@ -730,11 +761,14 @@ class AssistScreen(
         card.addView(Sections.separator(ctx, p))
         card.addView(Sections.row(ctx, p,
             title = "Send a test offer",
-            subtitle = if (OverlayController.isServiceEnabled(ctx))
-                "Shows the verdict card + countdown without a real offer"
-            else "Enable the service first — then this shows the overlay",
+            subtitle = when {
+                !OverlayController.isServiceEnabled(ctx) ->
+                    "Enable the service first — then this shows the overlay"
+                !settings.enabled -> "Monitoring is off — the test won't run"
+                else -> "Shows the verdict card + countdown without a real offer"
+            },
             iconGlyph = "bolt", iconTint = p.tint,
-            chevron = OverlayController.isServiceEnabled(ctx),
+            chevron = OverlayController.isServiceEnabled(ctx) && settings.enabled,
         ) {
             val svc = GigFlowAccessibilityService.instance
             if (svc != null) svc.testOffer()
