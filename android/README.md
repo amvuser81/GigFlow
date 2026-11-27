@@ -61,7 +61,11 @@ Five tabs behind a floating frosted tab bar:
 - **Diagnostics** (Assistant tab): per-app "last seen" status plus the
   exact texts the service read — with `[tap]` and `(view-id)` markers per
   node — so a parse miss is debuggable in seconds, and shareable via a
-  "Share this report" button (plain text, no account needed).
+  "Share this report" button (plain text, no account needed). With an AI key
+  added, a missed screen also offers **Ask … to fix this screen**: the provider
+  explains the miss and points at the payout, distance, duration and
+  accept/decline nodes, and the mapping is test-parsed against that capture
+  before it can be saved.
 - **Send a test offer** (Assistant → Automation): dry-runs score → overlay
   → voice without logging anything, so you can verify setup while parked.
 
@@ -95,5 +99,6 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - Everything is on-device: screen content, offers, records, GPS. The network
   calls are the anonymous GitHub Releases update check (and the APK download
   if you update) plus, only if you add your own key, the AI provider you
-  choose in AI setup.
+  choose in AI setup — and only for the email or single captured screen you
+  explicitly hand it.
 - Records live in `shiftlit.db` (SQLite, private app storage).

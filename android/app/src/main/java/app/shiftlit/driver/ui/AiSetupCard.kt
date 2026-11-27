@@ -13,18 +13,25 @@ import android.widget.TextView
 import android.widget.Toast
 import app.shiftlit.driver.AiProvider
 import app.shiftlit.driver.AiSetup
+import app.shiftlit.driver.Bounds
 import app.shiftlit.driver.Currencies
+import app.shiftlit.driver.Diagnostics
+import app.shiftlit.driver.OfferParser
+import app.shiftlit.driver.ParseHints
 import app.shiftlit.driver.SettingsRepository
 import app.shiftlit.driver.ui.Ios.Palette
 import app.shiftlit.driver.ui.Ios.dp
 
+/** One captured screen offered to the AI, with the app it came from. */
+data class ScreenCapture(val name: String, val pkg: String, val snap: Diagnostics.Snap)
+
 /**
  * "AI setup" — optional, bring your own key.
  *
- * The assistant works without any of this. What it adds is a second way to
- * fill the rule card: paste an email, the chosen provider reads it with the
- * driver's key and proposes thresholds, and nothing is written until the
- * driver taps Apply.
+ * The assistant works without any of this. What it adds is two second ways to
+ * set it up with the driver's own key: paste an email for rule values, or hand
+ * it a screen the parser missed so it can point at the payout, distance,
+ * duration and buttons. Neither writes anything until the driver taps Apply.
  */
 fun aiSetupCard(
     ctx: Context,
@@ -32,6 +39,7 @@ fun aiSetupCard(
     settings: SettingsRepository,
     onChanged: () -> Unit,
     lastDiagnostics: (() -> String?)? = null,
+    captures: (() -> List<ScreenCapture>)? = null,
 ): View {
     val card = Sections.card(ctx, p)
     val provider = settings.aiProviderOrDefault()
@@ -94,10 +102,32 @@ fun aiSetupCard(
             emailSheet(ctx, p, settings, onChanged, lastDiagnostics)
         }
     })
+    card.addView(Sections.separator(ctx, p))
+
+    card.addView(Sections.row(ctx, p,
+        title = "Fix a missed screen",
+        subtitle = if (settings.aiKey.isBlank())
+            "Add your API key first"
+        else if (captures == null)
+            "Open Diagnostics on a screen the assistant missed"
+        else "It reads one capture, explains the miss, and points at the payout, distance and buttons",
+        iconGlyph = "grid", iconTint = p.tint,
+        chevron = true,
+    ) {
+        if (settings.aiKey.isBlank()) {
+            Toast.makeText(ctx, "Add your API key first", Toast.LENGTH_SHORT).show()
+            keySheet(ctx, p, settings, onChanged)
+        } else if (captures == null) {
+            Toast.makeText(ctx, "Open Diagnostics on a missed screen instead", Toast.LENGTH_SHORT).show()
+        } else {
+            capturePicker(ctx, p, settings, onChanged, captures)
+        }
+    })
 
     card.addView(TextView(ctx).apply {
-        text = "Optional. Your key stays in this app's private storage. The email text goes " +
-            "only to the provider you pick, and only when you tap Ask. Shiftlit runs no server."
+        text = "Optional. Your key stays in this app's private storage. Only the email you paste " +
+            "or the one screen you pick goes to the provider you choose, and only when you tap " +
+            "Ask. Shiftlit runs no server."
         textSize = Ios.T_CAPTION
         setTextColor(p.label3)
         setPadding(dp(ctx, 16f), dp(ctx, 6f), dp(ctx, 16f), dp(ctx, 10f))
@@ -360,9 +390,9 @@ private fun emailSheet(
     fun renderResult() {
         resultBox.removeAllViews()
         val prop = proposal ?: return
-        fun line(text: String, size: Float, color: Int, top: Float, bold: Boolean) {
+        fun line(body: String, size: Float, color: Int, top: Float, bold: Boolean) {
             resultBox.addView(TextView(ctx).apply {
-                this.text = text
+                this.text = body
                 textSize = size
                 setTextColor(color)
                 if (bold) setTypeface(typeface, Typeface.BOLD)
@@ -499,4 +529,284 @@ private fun openUrl(ctx: Context, url: String) {
     } catch (_: Exception) {
         Toast.makeText(ctx, url, Toast.LENGTH_SHORT).show()
     }
+}
+
+private fun ago(at: Long): String {
+    val s = (System.currentTimeMillis() - at) / 1000
+    return when {
+        s < 60 -> "just now"
+        s < 3600 -> "${s / 60}m ago"
+        s < 86400 -> "${s / 3600}h ago"
+        else -> "${s / 86400}d ago"
+    }
+}
+
+/** Pick which captured screen to hand to the provider. */
+private fun capturePicker(
+    ctx: Context,
+    p: Palette,
+    settings: SettingsRepository,
+    onChanged: () -> Unit,
+    captures: () -> List<ScreenCapture>,
+) {
+    val list = captures().filter { it.snap.nodes.isNotEmpty() }
+        .sortedByDescending { it.snap.at }
+    val provider = settings.aiProviderOrDefault()
+    val sheet = IosSheet(ctx, p)
+    val col = sheetColumn(ctx, p, "Fix a missed screen",
+        "Pick one capture. Its node text goes to " + provider.label + " with your key; the " +
+            "mapping it proposes is tested on that capture and only saved when you say so.")
+
+    if (list.isEmpty()) {
+        col.addView(TextView(ctx).apply {
+            text = "No screen captured yet. Open a driver app, let Shiftlit read an offer " +
+                "card, then come back — or use Diagnostics on a screen that missed."
+            textSize = Ios.T_FOOTNOTE
+            setTextColor(p.label2)
+            setPadding(0, dp(ctx, 4f), 0, 0)
+        })
+    }
+    list.take(8).forEach { c ->
+        col.addView(Sections.row(ctx, p,
+            title = c.name,
+            subtitle = c.snap.outcome + " · " + c.snap.nodes.size + " nodes · " +
+                ago(c.snap.at),
+            iconGlyph = "grid", iconTint = p.tint,
+            chevron = true,
+        ) {
+            sheet.dismiss()
+            screenFixSheet(ctx, p, settings, onChanged, c.name, c.pkg, c.snap)
+        })
+        col.addView(Sections.separator(ctx, p))
+    }
+    col.addView(TextView(ctx).apply {
+        text = "Cancel"
+        textSize = Ios.T_BODY
+        setTypeface(typeface, Typeface.BOLD)
+        setTextColor(p.tint)
+        gravity = Gravity.CENTER
+        setPadding(0, dp(ctx, 12f), 0, dp(ctx, 4f))
+        setOnClickListener { sheet.dismiss() }
+    })
+    sheet.add(col).show()
+}
+
+/**
+ * Ask the provider to read one diagnostics capture and point at the nodes the
+ * parser needs: payout, distance, duration, accept, decline.
+ *
+ * Nothing is written until the proposed mapping is run through the real
+ * [OfferParser] on that capture. A mapping that doesn't produce an offer is
+ * shown as a failed test and cannot be saved, so a plausible-sounding answer
+ * can't quietly change how a screen is read.
+ */
+fun screenFixSheet(
+    ctx: Context,
+    p: Palette,
+    settings: SettingsRepository,
+    onChanged: () -> Unit,
+    name: String,
+    pkg: String,
+    snap: Diagnostics.Snap,
+) {
+    val flat = snap.nodes.map { n ->
+        OfferParser.FlatNode(
+            n.text,
+            n.viewId,
+            Bounds(
+                n.bounds.getOrElse(0) { 0 },
+                n.bounds.getOrElse(1) { 0 },
+                n.bounds.getOrElse(2) { 0 },
+                n.bounds.getOrElse(3) { 0 },
+            ),
+            n.clickable,
+        )
+    }
+    if (flat.isEmpty()) return
+    val provider = settings.aiProviderOrDefault()
+    val isKm = settings.distanceUnit == "KM"
+    val unit = if (isKm) "km" else "mi"
+    val symbol = settings.currencySymbol
+    val extra = OfferParser.extraMoney(settings.currencyCode, symbol)
+    val currency = settings.currencyCode + " (" + symbol + ")"
+    // The key captured with the snapshot wins where there is one: it was
+    // computed before the node cap, so it matches what a live scan produces.
+    val screen = snap.screen.ifBlank { ParseHints.screenKey(flat) }
+
+    val sheet = IosSheet(ctx, p)
+    val col = sheetColumn(ctx, p, "Fix this screen with AI",
+        "$name · ${flat.size} captured nodes. " + provider.label + " reads this one screen, " +
+            "explains why it missed, and points at the payout, distance, duration and " +
+            "accept/decline nodes.")
+    sheet.add(col)
+
+    val status = TextView(ctx).apply {
+        textSize = Ios.T_FOOTNOTE
+        setTextColor(p.label2)
+        setPadding(0, dp(ctx, 10f), 0, 0)
+    }
+    col.addView(status)
+
+    val ask = iosButton(ctx, p, "Ask " + provider.label)
+    col.addView(ask, LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        .apply { topMargin = dp(ctx, 12f) })
+
+    val resultBox = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+    col.addView(resultBox)
+
+    fun nodeLabel(i: Int?): String {
+        if (i == null) return ""
+        val n = flat.getOrNull(i) ?: return ""
+        val text = if (n.text.isBlank()) {
+            if (n.clickable) "(unnamed button)" else "(unnamed)"
+        } else n.text.take(60)
+        return "$text  ·  node $i"
+    }
+
+    fun hintOf(fix: AiSetup.ScreenFix): ParseHints.Hint? {
+        if (!fix.canSave) return null
+        return ParseHints.Hint(
+            pkg = pkg,
+            screen = screen,
+            payout = fix.payout?.let { ParseHints.anchor(flat, it) },
+            distance = fix.distance?.let { ParseHints.anchor(flat, it) },
+            duration = fix.duration?.let { ParseHints.anchor(flat, it) },
+            accept = fix.accept?.let { ParseHints.anchor(flat, it) },
+            decline = fix.decline?.let { ParseHints.anchor(flat, it) },
+        )
+    }
+
+    fun test(h: ParseHints.Hint): Pair<Boolean, String> {
+        val offer = OfferParser.parse(
+            pkg, flat, extra, symbol, settings.currencyCode, null, h,
+            settings.distanceUnit,
+        ) ?: return false to
+            "Those nodes still don't make an offer on this capture. Nothing is saved — " +
+            "try \"Teach this screen\" instead."
+        val parts = ArrayList<String>(5)
+        parts.add(Currencies.format(offer.payoutCents, offer.currencySymbol, offer.currencyCode))
+        offer.distanceKm?.let {
+            parts.add("%.1f %s".format(if (isKm) it else it * 0.621371, unit))
+        }
+        offer.durationMin?.let { parts.add("%.0f min".format(it)) }
+        if (offer.acceptNode != null) parts.add("accept ✓")
+        if (offer.declineNode != null) parts.add("decline ✓")
+        return true to "Tested on this capture: reads as " + parts.joinToString(" · ")
+    }
+
+    fun showResult(seen: AiSetup.ScreenFix) {
+        resultBox.removeAllViews()
+        val fix = AiSetup.sanitize(seen, snap.nodes, extra, symbol)
+
+        fun line(body: String, size: Float, color: Int, top: Float, bold: Boolean) {
+            resultBox.addView(TextView(ctx).apply {
+                this.text = body
+                textSize = size
+                setTextColor(color)
+                if (bold) setTypeface(typeface, Typeface.BOLD)
+                setPadding(0, dp(ctx, top), 0, 0)
+            })
+        }
+
+        seen.note?.let {
+            line("What it found", Ios.T_FOOTNOTE, p.label3, 14f, bold = true)
+            line(it, Ios.T_FOOTNOTE, p.label2, 4f, bold = false)
+        }
+
+        val dropped = ArrayList<String>(3)
+        if (seen.payout != null && fix.payout == null) dropped.add("payout")
+        if (seen.distance != null && fix.distance == null) dropped.add("distance")
+        if (seen.duration != null && fix.duration == null) dropped.add("duration")
+        if (dropped.isNotEmpty()) {
+            line(
+                "Ignored " + dropped.joinToString(", ") +
+                    ": that node doesn't hold the kind of value the role needs.",
+                Ios.T_CAPTION, p.orange, 6f, bold = false,
+            )
+        }
+
+        val roles = listOf(
+            "Payout" to fix.payout,
+            "Distance" to fix.distance,
+            "Duration" to fix.duration,
+            "Accept" to fix.accept,
+            "Decline" to fix.decline,
+        )
+        roles.forEach { (role, i) ->
+            if (i != null) resultBox.addView(ruleRow(ctx, p, role, nodeLabel(i)))
+        }
+
+        if (!fix.canSave) {
+            line(
+                "It didn't point at a payout or an accept/decline button, so there is " +
+                    "nothing to save for this screen.",
+                Ios.T_FOOTNOTE, p.orange, 10f, bold = false,
+            )
+            return
+        }
+        val h = hintOf(fix) ?: return
+        val (ok, msg) = test(h)
+        line(msg, Ios.T_FOOTNOTE, if (ok) p.green else p.orange, 10f, bold = false)
+        if (!ok) return
+        line(
+            "Saved like a taught mapping: it applies only on this screen, and only when " +
+                "the normal parser finds nothing.",
+            Ios.T_CAPTION, p.label3, 6f, bold = false,
+        )
+        val apply = iosButton(ctx, p, "Save this mapping", p.green)
+        resultBox.addView(apply, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            .apply { topMargin = dp(ctx, 10f) })
+        apply.setOnClickListener {
+            ParseHints.save(ctx, h)
+            sheet.dismiss()
+            Toast.makeText(
+                ctx, "Mapping saved — it applies the next time this screen is read",
+                Toast.LENGTH_SHORT,
+            ).show()
+            onChanged()
+        }
+    }
+
+    ask.setOnClickListener {
+        resultBox.removeAllViews()
+        status.setTextColor(p.label2)
+        status.text = "Sending this screen (${flat.size} nodes) to " + provider.label + ". " +
+            "Only this capture leaves the phone."
+        ask.isEnabled = false
+        ask.text = "Asking " + provider.label + "…"
+        Thread {
+            val r = AiSetup.askScreenFix(
+                provider = provider,
+                apiKey = settings.aiKey,
+                model = settings.aiModel,
+                baseUrl = settings.aiBaseUrl,
+                appName = name,
+                pkg = pkg,
+                outcome = snap.outcome,
+                screen = snap.screen,
+                nodes = snap.nodes,
+                decision = snap.decision,
+                currency = currency,
+                unit = unit,
+            )
+            status.post {
+                ask.isEnabled = true
+                ask.text = "Ask " + provider.label
+                when (r) {
+                    is AiSetup.FixResult.Err -> {
+                        status.setTextColor(p.orange)
+                        status.text = r.message
+                    }
+                    is AiSetup.FixResult.Ok -> {
+                        status.text = ""
+                        showResult(r.fix)
+                    }
+                }
+            }
+        }.start()
+    }
+
+    sheet.show()
 }

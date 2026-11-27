@@ -30,8 +30,9 @@ no sync and no token to attack.
 
 - **On-device only.** Offers, diagnostics, earnings, mileage and settings are
   stored in app-private storage. Nothing is uploaded. The one exception is
-  opt-in: AI setup sends the pasted text to the provider the user chose, with
-  the user's own key (see the privacy policy).
+  opt-in: AI setup sends the email the user pasted, or the one captured screen
+  they picked, to the provider they chose, with their own key (see the
+  privacy policy).
 - **AI key.** Stored in app-private preferences with Android backup disabled,
   sent only to the selected provider over HTTPS, never logged and never placed
   in a URL.
@@ -40,8 +41,8 @@ no sync and no token to attack.
   packages are ignored.
 - **No screen exfiltration.** Screen text is parsed in memory. The stored
   snapshot is capped and stays local; the only ways it leaves the phone are a
-  report the user exports and sends themselves, or text they paste into AI
-  setup and explicitly ask about.
+  report the user exports and sends themselves, or the email or single capture
+  they explicitly hand to AI setup and ask about.
 - **Updater.** The app reads this repository's latest GitHub release and only
   accepts an asset whose name starts with `shiftlit-`. Installs go through the
   system installer, which verifies the signing certificate, so an APK signed by

@@ -83,4 +83,103 @@ class AiSetupTest {
         assertEquals(a.minPayoutCents, b.minPayoutCents)
         assertEquals(a.note, b.note)
     }
+
+    @Test
+    fun readsANodeMappingFromAFencedReply() {
+        val reply = """
+            ```json
+            {"payout": 14, "distance": 18, "duration": null,
+             "accept": 31, "decline": 0,
+             "note": "The payout sits next to the timer and the x is unlabeled."}
+            ```
+        """.trimIndent()
+        val fix = AiSetup.parseScreenFix(reply, 40)!!
+        assertEquals(14, fix.payout)
+        assertEquals(18, fix.distance)
+        assertNull(fix.duration)
+        assertEquals(31, fix.accept)
+        assertEquals(0, fix.decline)
+        assertTrue(fix.canSave)
+        assertTrue(fix.note!!.contains("unlabeled"))
+    }
+
+    @Test
+    fun indicesOutsideTheCaptureAreDropped() {
+        val fix = AiSetup.parseScreenFix(
+            """{"payout": 99, "distance": -1, "decline": 3, "note": "x"}""",
+            10,
+        )!!
+        assertNull(fix.payout)
+        assertNull(fix.distance)
+        assertEquals(3, fix.decline)
+    }
+
+    @Test
+    fun aProseScreenAnswerIsNotAMapping() {
+        assertNull(AiSetup.parseScreenFix("I think the payout is the third one.", 10))
+    }
+
+    @Test
+    fun sanitizeKeepsOnlyPicksThatFitTheirRole() {
+        val nodes = listOf(
+            Diagnostics.Node("New offer", "title", listOf(0, 0, 100, 40), false),
+            Diagnostics.Node("\$12.50", "payout", listOf(0, 40, 100, 80), false),
+            Diagnostics.Node("4.2 mi", "distance", listOf(0, 80, 100, 120), false),
+            Diagnostics.Node("Leave at store", "note", listOf(0, 120, 100, 160), false),
+            Diagnostics.Node("", "close", listOf(340, 0, 380, 40), true),
+        )
+        val fix = AiSetup.sanitize(
+            AiSetup.ScreenFix(payout = 0, distance = 2, duration = 3, accept = 1, decline = 4),
+            nodes,
+        )
+        // "New offer" is not money, and "Leave at store" has no duration in it.
+        assertNull(fix.payout)
+        assertEquals(2, fix.distance)
+        assertNull(fix.duration)
+        assertEquals(1, fix.accept)
+        assertEquals(4, fix.decline)
+        assertTrue(fix.canSave)
+
+        // An amount and a distance alone teach nothing — a card needs an amount
+        // or a button, exactly like the point-at-the-card flow.
+        val amountsOnly = AiSetup.sanitize(
+            AiSetup.ScreenFix(payout = 0, distance = 2), nodes,
+        )
+        assertNull(amountsOnly.payout)
+        assertFalse(amountsOnly.canSave)
+    }
+
+    @Test
+    fun screenPromptListsIndicesAndTheDecisionTrail() {
+        val nodes = listOf(
+            Diagnostics.Node("New offer", "t", listOf(0, 0, 10, 10), false),
+            Diagnostics.Node("\$8.50", "p", listOf(0, 10, 10, 20), false),
+            Diagnostics.Node("", "x", listOf(0, 20, 10, 30), true),
+        )
+        val prompt = AiSetup.screenPrompt(
+            "Wolt", "com.wolt.driver", "miss", "v:a,b", nodes,
+            listOf("money=2 payout=8.5", "no distance and no duration → not an offer"),
+            "USD (\$)", "mi",
+        )
+        assertEquals(3, prompt.listed)
+        assertTrue(prompt.text.contains("\"index\":2"))
+        assertTrue(prompt.text.contains("\"clickable\":true"))
+        assertTrue(prompt.text.contains("no distance and no duration"))
+        assertTrue(prompt.text.contains("com.wolt.driver"))
+        // Unlabeled controls need their rectangle; nothing else does.
+        assertTrue(prompt.text.contains("\"at\":\"0,20,10,30\""))
+    }
+
+    @Test
+    fun screenPromptStaysBounded() {
+        val nodes = (0 until 900).map { i ->
+            Diagnostics.Node("a fairly long node label number $i", "id/$i", listOf(0, 0, 0, 0), false)
+        }
+        val prompt = AiSetup.screenPrompt(
+            "App", "pkg", "miss", "", nodes, emptyList(), "USD (\$)", "mi",
+        )
+        assertTrue(prompt.listed <= 400)
+        assertTrue(prompt.text.length <= 20_100)
+        assertTrue(prompt.text.contains("more nodes not shown"))
+    }
 }

@@ -17,7 +17,7 @@ storage means other apps cannot read it, and it is removed when you uninstall.
 | Offer log — up to 200 scored offers: payout, distance, duration, verdict, action, the rules that failed | So you can review what was offered and why it was skipped |
 | Diagnostics — the last screen read per app plus up to 20 recent reads per app: the text on screen, the parser's decision trail, which window was used | So a parse miss can be debugged instead of guessed at |
 | Taught mappings — the screen signature and the nodes you pointed at | So a layout the parser can't read can be taught once |
-| AI setup — the provider you picked, model, endpoint, and the API key you pasted | So the optional AI rule drafting can call that provider with your key |
+| AI setup — the provider you picked, model, endpoint, and the API key you pasted | So the optional AI rule drafting and screen fixes can call that provider with your key |
 | Records you create — earnings, expenses, mileage and schedules | The app's own bookkeeping |
 | GPS trail — only while a shift is running | To compute that shift's distance and draw the on-device heatmap |
 
@@ -51,8 +51,12 @@ There is a third kind, **only if you use the optional AI setup** and tap Ask:
   unit, and a fixed instruction are sent over HTTPS to the provider **you**
   chose — OpenAI, Anthropic, Google Gemini, OpenRouter, or an
   OpenAI-compatible endpoint you typed in — using the API key **you** created.
+- If you tap **Ask … to fix this screen** in Diagnostics, one captured screen
+  is sent the same way: its node text, the parser's decision trail, the app's
+  package name, your currency and distance unit. No other diagnostics, offer
+  log, earnings, mileage or GPS data go with it.
 - The answer comes back to your phone. Shiftlit has no server: the developer
-  never sees your key, the text or the answer.
+  never sees your key, the text, the screen or the answer.
 - That provider's own privacy terms apply to the request. Don't add a key if
   you don't want that; nothing else in the app needs one.
 - "Use the last diagnostics read" only fills the paste box locally. Nothing is

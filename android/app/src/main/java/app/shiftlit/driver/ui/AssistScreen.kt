@@ -58,6 +58,11 @@ class AssistScreen(
                     diagReport(name, pkg, snap).body
                 }
             },
+            captures = {
+                watchedApps.mapNotNull { (name, pkg) ->
+                    Diagnostics.get(ctx, pkg)?.let { ScreenCapture(name, pkg, it) }
+                }
+            },
         ))
         c.addView(Sections.header(ctx, p, "Per-app rules"))
         c.addView(perAppCard())
@@ -326,6 +331,33 @@ class AssistScreen(
                 textSize = Ios.T_CAPTION; setTextColor(p.label3)
                 gravity = android.view.Gravity.CENTER
                 setPadding(0, 0, 0, dp(ctx, 6f))
+            })
+        }
+        // The AI alternative to pointing at the card: same capture, provider
+        // proposes the node mapping, and the sheet test-parses it before it can
+        // be saved. Shown only once a key exists — without one it would just
+        // dead-end at the setup card.
+        val aiPkg = watchedApps.firstOrNull { it.first == name }?.second
+        if (snap.outcome == "miss" && snap.nodes.isNotEmpty() &&
+            settings.aiKey.isNotBlank() && aiPkg != null
+        ) {
+            val provider = settings.aiProviderOrDefault()
+            col.addView(TextView(ctx).apply {
+                text = "Ask " + provider.label + " to fix this screen"
+                textSize = Ios.T_BODY; setTypeface(typeface, Typeface.BOLD)
+                setTextColor(p.tint); gravity = android.view.Gravity.CENTER
+                setPadding(0, dp(ctx, 14f), 0, dp(ctx, 6f))
+                setOnClickListener {
+                    sheet.dismiss()
+                    screenFixSheet(ctx, p, settings, { refresh() }, name, aiPkg, snap)
+                }
+            })
+            col.addView(TextView(ctx).apply {
+                text = "Sends this screen's captured text to " + provider.label +
+                    " with your key. Nothing is saved unless the mapping it proposes parses."
+                textSize = Ios.T_CAPTION; setTextColor(p.label3)
+                gravity = android.view.Gravity.CENTER
+                setPadding(0, 0, 0, dp(ctx, 8f))
             })
         }
         // Only for a screen that didn't parse: a report costs the maintainer
