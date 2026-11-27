@@ -376,6 +376,7 @@ object OfferParser {
             declineNode = decline,
             rawTexts = texts,
             currencySymbol = currency,
+            currencyCode = currencyCode.takeIf { currency == extraSymbol },
             expiresInSec = expiresInSec,
             isReservation = isReservation,
         )

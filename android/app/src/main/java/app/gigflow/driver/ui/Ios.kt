@@ -152,8 +152,8 @@ object Ios {
 
     /** Currency-aware money render — placement/decimals come from the
      *  registry in [Currencies] ("1 850 Ft", "CHF 12.50", "¥1,200"). */
-    fun money(cents: Int?, symbol: String = "$"): String =
-        cents?.let { app.gigflow.driver.Currencies.format(it, symbol) } ?: "—"
+    fun money(cents: Int?, symbol: String = "$", code: String? = null): String =
+        cents?.let { app.gigflow.driver.Currencies.format(it, symbol, code) } ?: "—"
 
     fun verdictColor(v: VerdictCompat, p: Palette) = when (v) {
         VerdictCompat.GOOD -> p.green

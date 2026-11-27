@@ -34,11 +34,24 @@ class ParseReplayTest {
         val o = offer!!
         assertEquals(4_000, o.payoutCents)
         assertEquals("¥", o.currencySymbol)
+        assertEquals("CNY", o.currencyCode)
         assertEquals(10.0, o.distanceKm!!, 0.001)
         // The contract this rests on: "¥" alone resolves to the first
         // registered entry (JPY); the configured code is what disambiguates.
         assertEquals(7.2, Currencies.usdScale("¥", "CNY"), 0.001)
         assertEquals(150.0, Currencies.usdScale("¥"), 0.001)
+    }
+
+    @Test
+    fun formattingAndSpeechFollowTheIsoCodeToo() {
+        // JPY writes whole yen and is spoken as "yen"; CNY has cents.
+        assertEquals("¥40", Currencies.format(4_000, "¥", "JPY"))
+        assertEquals("¥40.00", Currencies.format(4_000, "¥", "CNY"))
+        assertEquals("40 yen", Currencies.spokenAmount(4_000, "¥", "JPY"))
+        assertEquals("40.00 yuan", Currencies.spokenAmount(4_000, "¥", "CNY"))
+        // Given only the ambiguous symbol, the old wrong answer is what remains.
+        assertEquals("¥40", Currencies.format(4_000, "¥"))
+        assertEquals("40 yen", Currencies.spokenAmount(4_000, "¥"))
     }
 
     @Test

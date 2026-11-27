@@ -174,19 +174,26 @@ object Currencies {
      * Unknown codes fall back to the symbol, unknown symbols to USD-scale: the
      * safe default for a sanity check.
      */
-    fun usdScale(symbol: String, code: String? = null): Double {
-        val entry = code?.trim()?.takeIf { it.isNotEmpty() }
-            ?.let { forCode(it.uppercase()) }
+    fun usdScale(symbol: String, code: String? = null): Double =
+        entryFor(symbol, code)?.let { PER_USD[it.code] } ?: 1.0
+
+    /**
+     * Registry entry for an amount: the ISO code wins over the symbol.
+     *
+     * "¥" is registered for JPY and CNY alike, "kr" for SEK/NOK/DKK, "L" for
+     * MDL/ALL — [forSymbol] can only answer the first one it saw, so anything
+     * that renders or speaks an amount has to be told which currency it is.
+     */
+    private fun entryFor(symbol: String, code: String?): Entry? =
+        code?.trim()?.takeIf { it.isNotEmpty() }?.let { forCode(it.uppercase()) }
             ?: forSymbol(symbol)
-        return entry?.let { PER_USD[it.code] } ?: 1.0
-    }
 
     /**
      * Render cents with the symbol's conventions. Unknown/custom symbols fall
      * back to prefix-with-space-if-lettered ("XYZ 12.50", "€-like" 12.50x).
      */
-    fun format(cents: Int, symbol: String): String {
-        val c = forSymbol(symbol)
+    fun format(cents: Int, symbol: String, code: String? = null): String {
+        val c = entryFor(symbol, code)
         val v = cents / 100.0
         if (c == null) {
             return if (symbol.firstOrNull()?.isLetter() == true)
@@ -203,11 +210,12 @@ object Currencies {
     }
 
     /** Spoken name for TTS — "forints", "zloty", the symbol if unknown. */
-    fun spoken(symbol: String): String = forSymbol(symbol)?.spoken ?: symbol
+    fun spoken(symbol: String, code: String? = null): String =
+        entryFor(symbol, code)?.spoken ?: symbol
 
-    /** Voice-ready amount: "12.50 dollars" / "1850 forints". */
-    fun spokenAmount(cents: Int, symbol: String): String {
-        val c = forSymbol(symbol)
+    /** Voice-ready amount: "12.50 dollars" / "1850 forints" / "40.00 yuan". */
+    fun spokenAmount(cents: Int, symbol: String, code: String? = null): String {
+        val c = entryFor(symbol, code)
         return if (c?.zeroDecimal == true)
             "%.0f %s".format(cents / 100.0, c.spoken)
         else "%.2f %s".format(cents / 100.0, c?.spoken ?: symbol)

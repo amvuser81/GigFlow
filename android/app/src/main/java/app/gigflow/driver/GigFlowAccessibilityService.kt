@@ -86,6 +86,7 @@ class GigFlowAccessibilityService : AccessibilityService() {
                 declineNode = dead,
                 rawTexts = listOf("Test offer"),
                 currencySymbol = settings.currencySymbol,
+                currencyCode = settings.currencyCode,
                 expiresInSec = 12,
             )
             val scored = RuleEngine.score(o, settings.rules())
@@ -100,7 +101,7 @@ class GigFlowAccessibilityService : AccessibilityService() {
             if (delay > 0) scheduleAutoAccept(scored, dead, delay)
             if (settings.voiceAlerts) {
                 tts?.speak(
-                    "Test offer, ${spokenAmount(o.payoutCents, o.currencySymbol)}",
+                    "Test offer, ${spokenAmount(o.payoutCents, o.currencySymbol, o.currencyCode)}",
                     TextToSpeech.QUEUE_FLUSH, null, "test",
                 )
             }
@@ -266,7 +267,7 @@ class GigFlowAccessibilityService : AccessibilityService() {
                 Verdict.BAD -> "Skip it"
             }
             tts?.speak(
-                "$label, ${spokenAmount(offer.payoutCents, offer.currencySymbol)}",
+                "$label, ${spokenAmount(offer.payoutCents, offer.currencySymbol, offer.currencyCode)}",
                 TextToSpeech.QUEUE_FLUSH, null, "offer",
             )
         }
@@ -411,7 +412,12 @@ class GigFlowAccessibilityService : AccessibilityService() {
         localDb?.insert("earning", payload)
         if (settings.voiceAlerts) {
             tts?.speak(
-                "Logged ${spokenAmount(comp.payoutCents, comp.currencySymbol)}",
+                // Completion text carries a symbol only; the configured code
+                // disambiguates it exactly when the symbol is the configured one.
+                "Logged ${spokenAmount(
+                    comp.payoutCents, comp.currencySymbol,
+                    settings.currencyCode.takeIf { comp.currencySymbol == settings.currencySymbol },
+                )}",
                 TextToSpeech.QUEUE_ADD, null, "earn",
             )
         }
@@ -419,8 +425,8 @@ class GigFlowAccessibilityService : AccessibilityService() {
 
     /** "12.50 dollars" / "1850 forints" — names and zero-decimal handling
      *  come from the currency registry. */
-    private fun spokenAmount(cents: Int, symbol: String): String =
-        Currencies.spokenAmount(cents, symbol)
+    private fun spokenAmount(cents: Int, symbol: String, code: String? = null): String =
+        Currencies.spokenAmount(cents, symbol, code)
 
     private fun cancelAutoAccept() {
         countdownTicker?.let { handler.removeCallbacks(it) }

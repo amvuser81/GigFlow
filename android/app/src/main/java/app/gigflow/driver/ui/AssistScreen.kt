@@ -321,7 +321,7 @@ class AssistScreen(
             )
                 ?: return false to "Still no offer — tap a different node."
             val parts = ArrayList<String>(3)
-            parts.add(Currencies.format(offer.payoutCents, offer.currencySymbol))
+            parts.add(Currencies.format(offer.payoutCents, offer.currencySymbol, offer.currencyCode))
             offer.distanceKm?.let { parts.add("%.1f km".format(it)) }
             offer.durationMin?.let { parts.add("%.0f min".format(it)) }
             return true to "Reads as ${parts.joinToString(" · ")}"

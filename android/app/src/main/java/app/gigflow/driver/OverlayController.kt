@@ -78,7 +78,7 @@ class OverlayController(private val service: AccessibilityService) {
 
         val title = TextView(service).apply {
             text = (if (o.isReservation) "RESERVED · " else "") +
-                "$label  ·  ${money(o.payoutCents, o.currencySymbol)}"
+                "$label  ·  ${money(o.payoutCents, o.currencySymbol, o.currencyCode)}"
             setTextColor(fgColor)
             textSize = 15f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -92,7 +92,8 @@ class OverlayController(private val service: AccessibilityService) {
         val cur = o.currencySymbol
         val perDist = scored.perMileCents?.let { if (isKm) (it / 1.609344).toInt() else it }
         val stats = TextView(service).apply {
-            text = "${money(perDist, cur)}/${if (isKm) "km" else "mi"} · ${money(scored.perHourCents, cur)}/hr" +
+            text = "${money(perDist, cur, o.currencyCode)}/${if (isKm) "km" else "mi"} · " +
+                "${money(scored.perHourCents, cur, o.currencyCode)}/hr" +
                 o.distanceKm?.let {
                     " · ${"%.1f".format(if (isKm) it else it * 0.621371)} ${if (isKm) "km" else "mi"}"
                 }.orEmpty() +

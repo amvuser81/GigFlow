@@ -36,6 +36,9 @@ data class DetectedOffer(
     val isReservation: Boolean = false,
     /** Display symbol detected on the card — "$", "Ft", "€", … */
     val currencySymbol: String = "$",
+    /** ISO code when the card is in the configured currency. The symbol alone
+     *  can't tell "¥" (JPY/CNY) apart, and formatting plus speech depend on it. */
+    val currencyCode: String? = null,
     /** Seconds the offer gives the driver to decide, if shown on-card. */
     val expiresInSec: Int? = null,
 ) {
