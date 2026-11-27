@@ -1,9 +1,13 @@
 package app.gigflow.driver
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityService.ScreenshotResult
+import android.accessibilityservice.AccessibilityService.TakeScreenshotCallback
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.location.LocationManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
@@ -29,6 +33,13 @@ class GigFlowAccessibilityService : AccessibilityService() {
     private var lastScanAt = 0L
     private var scanToken = 0
     private var activeOffer: ScoredOffer? = null
+
+    /** Last driver app scanned — the target of the Diagnostics pixel probe. */
+    private var lastDriverPkg = ""
+
+    /** Result of the last probe, so the Diagnostics row survives a rebuild. */
+    var probeSummary: String = ""
+        private set
 
     /** Live point-at-the-card teach session, if one is running. */
     private var teach: TeachOverlay? = null
@@ -247,6 +258,133 @@ class GigFlowAccessibilityService : AccessibilityService() {
         "windows=?"
     }
 
+    /**
+     * Capture the driver app's live window and say whether its pixels are
+     * readable. An empty text tree has two causes that look identical in a
+     * snapshot — redaction (fixable with the tool flag) and a canvas (OCR) —
+     * but a secure window is black for every app, so this decides whether OCR
+     * is worth building at all.
+     */
+    fun probeWindow(report: (String) -> Unit) {
+        handler.post {
+            fun say(msg: String) {
+                probeSummary = msg
+                report(msg)
+            }
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                say("Needs Android 11 or newer")
+                return@post
+            }
+            val pkg = lastDriverPkg
+            if (pkg.isEmpty()) {
+                say("Open a driver app first — there is nothing to capture yet")
+                return@post
+            }
+            val win = try {
+                windows.firstOrNull { w ->
+                    val r = w.root
+                    val same = r?.packageName?.toString() == pkg
+                    r?.recycle()
+                    same
+                }
+            } catch (_: Exception) {
+                null
+            }
+            if (win == null) {
+                say("No readable window for $pkg right now — open it and retry")
+                return@post
+            }
+            val exec = java.util.concurrent.Executor { r -> handler.post(r) }
+            val cb = shotCallback { msg -> say(msg) }
+            try {
+                if (Build.VERSION.SDK_INT >= 34) {
+                    takeScreenshotOfWindow(win.id, exec, cb)
+                } else {
+                    say("Capturing the whole screen (Android 11–13)")
+                    takeScreenshot(android.view.Display.DEFAULT_DISPLAY, exec, cb)
+                }
+            } catch (e: Exception) {
+                say("Capture failed: ${e.javaClass.simpleName}")
+            }
+        }
+    }
+
+    private fun shotCallback(say: (String) -> Unit) = object : TakeScreenshotCallback {
+        override fun onSuccess(screenshot: ScreenshotResult) {
+            val line = try {
+                analyzeShot(screenshot)
+            } catch (e: Exception) {
+                "Could not read the capture: ${e.javaClass.simpleName}"
+            }
+            handler.post { say(line) }
+        }
+
+        override fun onFailure(errorCode: Int) {
+            handler.post { say(shotError(errorCode)) }
+        }
+    }
+
+    /** Share of sampled pixels that aren't black, and what that means for OCR. */
+    private fun analyzeShot(s: ScreenshotResult): String {
+        val buffer = s.hardwareBuffer
+        try {
+            val wrapped = Bitmap.wrapHardwareBuffer(buffer, s.colorSpace)
+                ?: return "The capture came back without an image"
+            val bmp = if (wrapped.config == Bitmap.Config.HARDWARE) {
+                wrapped.copy(Bitmap.Config.ARGB_8888, false) ?: wrapped
+            } else {
+                wrapped
+            }
+            val w = bmp.width
+            val h = bmp.height
+            if (w <= 0 || h <= 0) return "The capture was empty"
+            // A 100×100 grid is enough to tell content from a black frame, and
+            // cheap enough to run while the card is still on screen.
+            val stepX = maxOf(1, w / 100)
+            val stepY = maxOf(1, h / 100)
+            var lit = 0
+            var total = 0
+            var y = 0
+            while (y < h) {
+                var x = 0
+                while (x < w) {
+                    val c = bmp.getPixel(x, y)
+                    val luma = ((c shr 16 and 0xFF) + (c shr 8 and 0xFF) + (c and 0xFF)) / 3
+                    if (luma > 12) lit++
+                    total++
+                    x += stepX
+                }
+                y += stepY
+            }
+            if (total == 0) return "The capture was empty"
+            val pct = lit * 100 / total
+            val verdict = if (pct < 1) {
+                "BLACK — secure or hidden; no OCR can read this"
+            } else if (pct < 8) {
+                "almost black ($pct% lit) — likely secure; OCR would be unreliable"
+            } else {
+                "pixels readable ($pct% lit) — OCR is possible"
+            }
+            return "captured ${w}×${h} · $verdict"
+        } finally {
+            try {
+                buffer.close()
+            } catch (_: Exception) {
+                // The capture is already analysed; nothing left to release.
+            }
+        }
+    }
+
+    /** Platform screenshot error codes, spelled out. */
+    private fun shotError(code: Int): String = when (code) {
+        6 -> "SECURE WINDOW (FLAG_SECURE) — black for every app, so OCR is impossible here"
+        2 -> "No screenshot access — reinstall this build, then re-enable the service"
+        5 -> "The window vanished — reopen the card and retry"
+        1 -> "The system failed the capture (internal error)"
+        3 -> "Too many captures in a row — wait a second and retry"
+        else -> "Capture failed (error $code)"
+    }
+
     /** Hide the overlay only after the offer's been missing for a bit —
      *  single-frame parse misses are normal (animations, partial draws)
      *  and shouldn't flicker the verdict off. */
@@ -398,6 +536,7 @@ class GigFlowAccessibilityService : AccessibilityService() {
      */
     private fun scan(pkg: String, now: Long, attempt: Int, token: Int) {
         if (token != scanToken) return // superseded by a newer scan
+        lastDriverPkg = pkg
         val prefs = settings.rulesFor(pkg) // per-app overrides over globals
         // Monitoring switched off while an overlay was up — tear it down.
         if (!prefs.enabled) { offerGone(); return }

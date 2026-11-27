@@ -215,6 +215,66 @@ class AssistScreen(
                 chevron = snap?.texts?.isNotEmpty() == true,
             ) { snap?.let { showDiag(name, it) } })
         }
+        card.addView(Sections.separator(ctx, p))
+        // Whether the declaration in the service config actually reached the
+        // system. Android 14 only lets a declared tool read data-sensitive
+        // views, so "no" here means every redacted card stays invisible.
+        val tool = if (android.os.Build.VERSION.SDK_INT >= 31) {
+            GigFlowAccessibilityService.instance?.serviceInfo?.let {
+                if (it.isAccessibilityTool) "yes" else "no"
+            } ?: "service off"
+        } else {
+            "needs Android 12+"
+        }
+        card.addView(Sections.row(ctx, p,
+            title = "Accessibility tool flag",
+            subtitle = "Android 14 hides data-sensitive views from a service without it",
+            value = tool,
+            iconGlyph = "doc",
+            iconTint = if (tool == "yes") p.green else p.orange,
+            chevron = false,
+        ) {})
+
+        card.addView(Sections.separator(ctx, p))
+        // The one question that decides whether OCR is worth building: are the
+        // pixels of the driver app's window readable, or blacked out?
+        val probeState = TextView(ctx).apply {
+            text = GigFlowAccessibilityService.instance?.probeSummary
+                ?.takeIf { it.isNotEmpty() } ?: "Not run yet"
+            textSize = Ios.T_FOOTNOTE
+            setTextColor(p.label2)
+            setPadding(0, dp(ctx, 6f), 0, dp(ctx, 10f))
+        }
+        card.addView(LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(ctx, 16f), dp(ctx, 14f), dp(ctx, 16f), dp(ctx, 14f))
+            addView(TextView(ctx).apply {
+                text = "Probe the driver app's window"
+                textSize = Ios.T_HEADLINE
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(p.label)
+            })
+            addView(TextView(ctx).apply {
+                text = "Captures its pixels and says whether OCR could ever read them"
+                textSize = Ios.T_FOOTNOTE
+                setTextColor(p.label2)
+            })
+            addView(probeState)
+            addView(iosButton(ctx, p, "Capture and check").apply {
+                setOnClickListener {
+                    val svc = GigFlowAccessibilityService.instance
+                    if (svc == null) {
+                        probeState.text = "Service is off — enable it first"
+                    } else {
+                        probeState.text = "Capturing…"
+                        svc.probeWindow { msg -> probeState.text = msg }
+                    }
+                }
+            }, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ))
+        })
         return card
     }
 

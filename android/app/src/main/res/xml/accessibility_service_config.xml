@@ -8,6 +8,7 @@
     android:accessibilityFlags="flagRetrieveInteractiveWindows|flagReportViewIds|flagIncludeNotImportantViews"
     android:canRetrieveWindowContent="true"
     android:canPerformGestures="true"
+    android:canTakeScreenshot="true"
     android:isAccessibilityTool="true"
     android:notificationTimeout="80"
     android:description="@string/service_description"
