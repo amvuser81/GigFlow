@@ -212,7 +212,8 @@ class AssistScreen(
         })
         col.addView(TextView(ctx).apply {
             text = if (snap.outcome == "miss")
-                "This screen had a price on it but wasn't read as an offer — the app's layout probably changed. Tap 'Share this report' and send it over."
+                "GigFlow did not parse an offer. If this is a mistake, " +
+                    "\"Teach this screen\" and/or \"Email this report\"."
             else "Everything the assistant read on the last screen."
             textSize = Ios.T_FOOTNOTE; setTextColor(p.label2)
             setPadding(0, 0, 0, dp(ctx, 10f))
