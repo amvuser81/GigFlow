@@ -241,6 +241,46 @@ class LocalDb(ctx: Context) : SQLiteOpenHelper(ctx, "shiftlit.db", null, 3) {
         return Heat(pts, shifts)
     }
 
+    /** Mileage records that still carry a GPS trail (for the clear action). */
+    fun trailRecords(): Int {
+        readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM records WHERE type = 'mileage' AND payload LIKE '%\"points\"%'",
+            null,
+        ).use { c -> return if (c.moveToFirst()) c.getInt(0) else 0 }
+    }
+
+    /**
+     * Drops every stored trail but keeps the mileage records and their
+     * distances. Payloads are read first, then rewritten in one transaction so
+     * no cursor is open while the rows it read are updated.
+     */
+    fun clearTrails(): Int {
+        val rows = mutableListOf<Pair<String, JSONObject>>()
+        readableDatabase.rawQuery(
+            "SELECT client_id, payload FROM records WHERE type = 'mileage'", null,
+        ).use { c ->
+            while (c.moveToNext()) {
+                val payload = JSONObject(c.getString(1))
+                if (payload.has("points")) rows.add(c.getString(0) to payload)
+            }
+        }
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            rows.forEach { (clientId, payload) ->
+                payload.remove("points")
+                db.execSQL(
+                    "UPDATE records SET payload = ?, synced = 0 WHERE client_id = ?",
+                    arrayOf(payload.toString(), clientId),
+                )
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+        return rows.size
+    }
+
     data class Totals(val earnedCents: Int, val spentCents: Int, val km: Double)
     data class Stats(
         val earnedCents: Int, val spentCents: Int, val km: Double,

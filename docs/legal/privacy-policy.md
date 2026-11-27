@@ -28,8 +28,8 @@ storage means other apps cannot read it, and it is removed when you uninstall.
   foodora riders). It is scoped to those packages and cannot see other apps.
   It also performs the accept/decline taps, but only when you enable
   automation.
-- **Location** — used only while a shift is recording, to measure distance.
-  Never outside a shift.
+- **Location** — used only while a shift is recording, to measure that shift's
+  distance and draw the on-device heatmap. Never outside a shift.
 - **Notifications** — the shift tracker runs as a foreground service and must
   show a notification while it does.
 - **Install unknown apps** — only if you use the in-app updater; Android asks
@@ -78,7 +78,8 @@ remote configuration.
 
 Data stays until you remove it:
 
-- Clear the offer log or a diagnostics snapshot inside the app.
+- Clear the offer log, a diagnostics snapshot, or the stored GPS trails
+  (Track → Clear GPS trails) inside the app.
 - Delete individual earnings, expenses or shifts in their tabs.
 - Uninstall the app to remove everything, including the database and all
   preferences. Android deletes private storage on uninstall; there is no

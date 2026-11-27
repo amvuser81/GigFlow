@@ -271,6 +271,7 @@ class TrackScreen(
         val since = if (heatDays <= 0) 0L
                     else System.currentTimeMillis() - heatDays * 86_400_000L
         val heat = db.heat(since)
+        val trails = db.trailRecords()
         if (heat.points.size < 2) {
             card.addView(TextView(ctx).apply {
                 text = if (heatDays > 0)
@@ -309,7 +310,64 @@ class TrackScreen(
                 }
             })
         })
+        // Clearing is separate from deleting: the records and their distances
+        // are earnings evidence, the points behind the picture are not.
+        if (trails > 0) {
+            card.addView(Sections.separator(ctx, p))
+            card.addView(Sections.row(ctx, p,
+                title = "Clear GPS trails",
+                subtitle = "Removes the stored points; mileage records stay",
+                iconGlyph = "trash", iconTint = p.red,
+                chevron = true,
+            ) { confirmClearTrails(trails) })
+        }
         return card
+    }
+
+    private fun confirmClearTrails(count: Int) {
+        val sheet = IosSheet(ctx, p)
+        val col = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(ctx, 20f), dp(ctx, 4f), dp(ctx, 20f), dp(ctx, 10f))
+            addView(TextView(ctx).apply {
+                text = "Clear GPS trails?"
+                textSize = Ios.T_HEADLINE
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(p.label)
+            })
+            addView(TextView(ctx).apply {
+                text = "Drops the stored points from $count mileage " +
+                    (if (count == 1) "record" else "records") +
+                    ". Distances, earnings and everything else stay. The heatmap " +
+                    "starts empty and fills again as you track new shifts."
+                textSize = Ios.T_FOOTNOTE
+                setTextColor(p.label2)
+                setPadding(0, dp(ctx, 4f), 0, dp(ctx, 12f))
+            })
+        }
+        sheet.add(col)
+        val clear = iosButton(ctx, p, "Clear trails", p.red)
+        val cancel = iosButton(ctx, p, "Cancel", p.fill)
+        cancel.setTextColor(p.label)
+        sheet.add(LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(ctx, 16f), 0, dp(ctx, 16f), 0)
+            addView(clear)
+            addView(cancel, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { topMargin = dp(ctx, 8f) })
+        })
+        clear.setOnClickListener {
+            val n = db.clearTrails()
+            sheet.dismiss()
+            Toast.makeText(ctx,
+                if (n > 0) "Cleared $n GPS trails" else "No trails to clear",
+                Toast.LENGTH_SHORT).show()
+            heatDays = 30
+            refresh()
+        }
+        cancel.setOnClickListener { sheet.dismiss() }
+        sheet.show()
     }
 
     private fun isKm() = settings.distanceUnit == "KM"
