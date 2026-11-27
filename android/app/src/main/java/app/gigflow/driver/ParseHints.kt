@@ -58,12 +58,13 @@ object ParseHints {
     }
 
     /**
-     * Screen fingerprint: the sorted view ids on the screen. Text is useless
-     * here (amounts and names change every offer); view ids identify the
-     * layout. Capped so a long list can't make the key unbounded.
+     * Screen fingerprint: the lowest-sorting view ids on the screen. Text is
+     * useless here (amounts and names change every offer); view ids identify
+     * the layout. A short prefix rather than every id, so a snapshot that lost
+     * a few nodes (see Diagnostics.MAX_NODES) still matches the live screen.
      */
     fun screenKey(nodes: List<OfferParser.FlatNode>): String {
-        val ids = nodes.mapNotNull { it.viewId }.distinct().sorted().take(24)
+        val ids = nodes.mapNotNull { it.viewId }.distinct().sorted().take(8)
         return if (ids.isEmpty()) "none" else ids.joinToString(",")
     }
 
