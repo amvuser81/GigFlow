@@ -28,7 +28,8 @@ class TrackScreen(
     val screen = Screen(ctx, p, "Track")
     private val ctx: Context = ctx
 
-    private fun money(cents: Int?) = Ios.money(cents, settings.currencySymbol)
+    private fun money(cents: Int?) =
+        Ios.money(cents, settings.currencySymbol, settings.currencyCode)
     private var kind = 0 // 0 earning, 1 expense, 2 mileage
     private var editing: LocalDb.Row? = null
 
