@@ -379,9 +379,14 @@ class ParseReplayTest {
             OfferParser.FlatNode("Trip · \$12.40 · 8.2 mi", null, Bounds(40, 400, 900, 460), false),
             OfferParser.FlatNode("Trip · \$9.80 · 5.1 mi", null, Bounds(40, 470, 900, 530), false),
         )
+        val trail = ArrayList<String>()
         assertNull(
             "a day's earnings must not read as an offer",
-            OfferParser.parse("com.ubercab.driver", nodes),
+            OfferParser.parse("com.ubercab.driver", nodes, trace = trail),
+        )
+        assertTrue(
+            "the summary guard, not an accident: $trail",
+            trail.any { it.contains("summary screen") },
         )
         assertFalse(
             "teaching belongs on offers, not on a wallet",
@@ -402,7 +407,12 @@ class ParseReplayTest {
             trip("2 900 Ft", "6,1 km", "19 perc", 100) +
             trip("4 100 Ft", "9,4 km", "25 perc", 200) +
             trip("1 750 Ft", "3,3 km", "12 perc", 300)
-        assertNull(OfferParser.parse("com.wolt.driver", nodes))
+        val trail = ArrayList<String>()
+        assertNull(OfferParser.parse("com.wolt.driver", nodes, trace = trail))
+        assertTrue(
+            "a trip list is caught by its structure: $trail",
+            trail.any { it.contains("summary screen") },
+        )
         assertFalse(OfferParser.looksLikeOfferForTeaching(nodes))
     }
 
