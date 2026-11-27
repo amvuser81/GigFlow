@@ -408,19 +408,6 @@ fun screenFixSheet(
         return "$text  ·  node $i"
     }
 
-    fun hintOf(fix: AiSetup.ScreenFix): ParseHints.Hint? {
-        if (!fix.canSave) return null
-        return ParseHints.Hint(
-            pkg = pkg,
-            screen = screen,
-            payout = fix.payout?.let { ParseHints.anchor(flat, it) },
-            distance = fix.distance?.let { ParseHints.anchor(flat, it) },
-            duration = fix.duration?.let { ParseHints.anchor(flat, it) },
-            accept = fix.accept?.let { ParseHints.anchor(flat, it) },
-            decline = fix.decline?.let { ParseHints.anchor(flat, it) },
-        )
-    }
-
     fun test(h: ParseHints.Hint): Pair<Boolean, String> {
         val offer = OfferParser.parse(
             pkg, flat, extra, symbol, settings.currencyCode, null, h,
@@ -489,7 +476,7 @@ fun screenFixSheet(
             )
             return
         }
-        val h = hintOf(fix) ?: return
+        val h = AiSetup.hintFor(fix, pkg, screen, flat) ?: return
         val (ok, msg) = test(h)
         line(msg, Ios.T_FOOTNOTE, if (ok) p.green else p.orange, 10f, bold = false)
         if (!ok) return

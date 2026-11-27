@@ -268,6 +268,29 @@ Rules:
     }
 
     /**
+     * The taught hint a settled [fix] describes on [nodes], or null when there
+     * is no amount or button to save. The sheet saves exactly this, so the
+     * conversion is testable without a Context.
+     */
+    fun hintFor(
+        fix: ScreenFix,
+        pkg: String,
+        screen: String,
+        nodes: List<OfferParser.FlatNode>,
+    ): ParseHints.Hint? {
+        if (!fix.canSave) return null
+        return ParseHints.Hint(
+            pkg = pkg,
+            screen = screen,
+            payout = fix.payout?.let { ParseHints.anchor(nodes, it) },
+            distance = fix.distance?.let { ParseHints.anchor(nodes, it) },
+            duration = fix.duration?.let { ParseHints.anchor(nodes, it) },
+            accept = fix.accept?.let { ParseHints.anchor(nodes, it) },
+            decline = fix.decline?.let { ParseHints.anchor(nodes, it) },
+        )
+    }
+
+    /**
      * Runs one screen-fix request. Call from a background thread; the callback
      * runs on the calling thread. Never logs the key, never puts it in the URL.
      */
