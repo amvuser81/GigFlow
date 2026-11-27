@@ -519,7 +519,14 @@ class AssistScreen(
                 ?: return false to "Still no offer — tap a different node."
             val parts = ArrayList<String>(5)
             parts.add(Currencies.format(offer.payoutCents, offer.currencySymbol, offer.currencyCode))
-            offer.distanceKm?.let { parts.add("%.1f km".format(it)) }
+            // The app defaults to miles (SettingsRepository.distanceUnit); the
+            // parser works in km, so the preview has to speak the user's unit.
+            offer.distanceKm?.let {
+                val isKm = settings.distanceUnit == "KM"
+                parts.add(
+                    "%.1f %s".format(if (isKm) it else it * 0.621371, if (isKm) "km" else "mi"),
+                )
+            }
             offer.durationMin?.let { parts.add("%.0f min".format(it)) }
             if (offer.acceptNode != null) parts.add("accept ✓")
             if (offer.declineNode != null) parts.add("decline ✓")
