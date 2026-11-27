@@ -90,7 +90,7 @@ class ScreenFixPipelineTest {
         // Exactly what the sheet saves.
         val hint = AiSetup.hintFor(fix, pkg, screen, flatOf(card))!!
         assertEquals("\$12.50", ParseHints.resolve(flatOf(card), hint.payout)!!.text)
-        assertEquals("close", ParseHints.resolve(flatOf(card), hint.decline)!!.viewId)
+        assertEquals("id/close", ParseHints.resolve(flatOf(card), hint.decline)!!.viewId)
         assertNull(ParseHints.staleReason(hint, flatOf(card)))
 
         // The anchors are stable on a fresh capture of the same layout.
