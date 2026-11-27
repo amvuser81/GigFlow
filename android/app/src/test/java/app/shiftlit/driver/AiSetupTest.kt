@@ -171,6 +171,50 @@ class AiSetupTest {
     }
 
     @Test
+    fun screenPromptCarriesEarlierReadsForRepeatedMisses() {
+        val nodes = listOf(
+            Diagnostics.Node("\$8.50", "p", listOf(0, 0, 10, 10), false),
+        )
+        val history = listOf(
+            Diagnostics.Entry(
+                1_000, "miss", "v:a", 120,
+                listOf("New offer", "\$8.50"),
+                listOf("money=1 payout=8.5", "no distance and no duration → not an offer"),
+            ),
+            Diagnostics.Entry(
+                500, "miss", "v:a", 118,
+                listOf("New offer", "\$8.50"),
+                listOf("money=1 payout=8.5"),
+            ),
+        )
+        val prompt = AiSetup.screenPrompt(
+            "Wolt", "com.wolt.driver", "miss", "v:a", nodes,
+            listOf("money=1 payout=8.5"), "USD (\$)", "mi", history,
+        )
+        assertTrue(prompt.text.contains("Earlier reads"))
+        assertTrue(prompt.text.contains("120 nodes"))
+        assertTrue(prompt.text.contains("no distance and no duration"))
+        assertTrue(prompt.text.contains("118 nodes"))
+        // The warning matters: history indices are not this capture's.
+        assertTrue(prompt.text.contains("their indices are not"))
+    }
+
+    @Test
+    fun screenPromptCapsEarlierReads() {
+        val history = (0 until 20).map {
+            Diagnostics.Entry(
+                it.toLong(), "miss", "v:a", 100,
+                listOf("New offer"), listOf("money=0 → not an offer"),
+            )
+        }
+        val prompt = AiSetup.screenPrompt(
+            "App", "pkg", "miss", "v:a", emptyList(), emptyList(),
+            "USD (\$)", "mi", history,
+        )
+        assertEquals(6, Regex("  - miss").findAll(prompt.text).count())
+    }
+
+    @Test
     fun screenPromptStaysBounded() {
         val nodes = (0 until 900).map { i ->
             Diagnostics.Node("a fairly long node label number $i", "id/$i", listOf(0, 0, 0, 0), false)

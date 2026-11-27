@@ -53,8 +53,10 @@ There is a third kind, **only if you use the optional AI setup** and tap Ask:
   OpenAI-compatible endpoint you typed in — using the API key **you** created.
 - If you tap **Ask … to fix this screen** in Diagnostics, one captured screen
   is sent the same way: its node text, the parser's decision trail, the app's
-  package name, your currency and distance unit. No other diagnostics, offer
-  log, earnings, mileage or GPS data go with it.
+  package name, your currency and distance unit, plus up to six earlier reads
+  of that app (outcome, node count, a few texts and the decision trail — no
+  node trees). No other diagnostics, offer log, earnings, mileage or GPS data
+  go with it.
 - The answer comes back to your phone. Shiftlit has no server: the developer
   never sees your key, the text, the screen or the answer.
 - That provider's own privacy terms apply to the request. Don't add a key if

@@ -63,9 +63,10 @@ Five tabs behind a floating frosted tab bar:
   node — so a parse miss is debuggable in seconds, and shareable via a
   "Share this report" button (plain text, no account needed). With an AI key
   added, a missed screen also offers **Ask … to fix this screen**: the provider
-  explains the miss and points at the payout, distance, duration and
-  accept/decline nodes, and the mapping is test-parsed against that capture
-  before it can be saved.
+  gets that capture plus the app's recent reads, explains the miss (including
+  when the same card keeps being missed) and points at the payout, distance,
+  duration and accept/decline nodes, and the mapping is test-parsed against
+  that capture before it can be saved.
 - **Send a test offer** (Assistant → Automation): dry-runs score → overlay
   → voice without logging anything, so you can verify setup while parked.
 

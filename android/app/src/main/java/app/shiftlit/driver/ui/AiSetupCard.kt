@@ -632,6 +632,9 @@ fun screenFixSheet(
     // The key captured with the snapshot wins where there is one: it was
     // computed before the node cap, so it matches what a live scan produces.
     val screen = snap.screen.ifBlank { ParseHints.screenKey(flat) }
+    // Reads older than this capture. They carry no node tree, only outcome,
+    // decision and a few texts — enough to see that the same card keeps missing.
+    val earlier = Diagnostics.history(ctx, pkg).filter { it.at < snap.at }.take(6)
 
     val sheet = IosSheet(ctx, p)
     val col = sheetColumn(ctx, p, "Fix this screen with AI",
@@ -772,8 +775,13 @@ fun screenFixSheet(
     ask.setOnClickListener {
         resultBox.removeAllViews()
         status.setTextColor(p.label2)
-        status.text = "Sending this screen (${flat.size} nodes) to " + provider.label + ". " +
-            "Only this capture leaves the phone."
+        val sent = if (earlier.isEmpty()) {
+            "this screen (${flat.size} nodes)"
+        } else {
+            "this screen (${flat.size} nodes) and ${earlier.size} earlier reads"
+        }
+        status.text = "Sending $sent to " + provider.label +
+            ". Only this app's diagnostics leave the phone."
         ask.isEnabled = false
         ask.text = "Asking " + provider.label + "…"
         Thread {
@@ -790,6 +798,7 @@ fun screenFixSheet(
                 decision = snap.decision,
                 currency = currency,
                 unit = unit,
+                history = earlier,
             )
             status.post {
                 ask.isEnabled = true

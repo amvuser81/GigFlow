@@ -58,8 +58,9 @@ Everything runs on-device. No account required, no subscription, no tracking.
   driver app, so parse misses are debuggable instead of silent
 - **Optional AI setup** — bring your own API key for OpenAI, Anthropic, Google
   Gemini, OpenRouter or any OpenAI-compatible endpoint. Paste an email for
-  rule values, or hand it a screen the parser missed: it explains the miss and
-  points at the payout, distance, duration and accept/decline nodes. Either
+  rule values, or hand it a screen the parser missed plus that app's recent
+  reads: it explains the miss and points at the payout, distance, duration and
+  accept/decline nodes. Either
   proposal is reviewed before it is applied, and a screen mapping is
   test-parsed on that capture first. The request goes from your phone straight
   to the provider you chose; there is no Shiftlit server in between
@@ -92,9 +93,10 @@ your phone to that provider and nowhere else; nothing is sent until you tap
 Ask, and every other feature works without a key.
 
 If a card isn't being read, **Assist → Diagnostics → the app → Ask … to fix
-this screen** does the same for one capture: the provider says what stopped
-the parse, points at the payout, distance, duration and accept/decline nodes,
-and the mapping is tested on that capture before you can save it.
+this screen** does the same for one capture and the app's recent reads: the
+provider says what stopped the parse (and whether it keeps missing the same
+card), points at the payout, distance, duration and accept/decline nodes, and
+the mapping is tested on that capture before you can save it.
 
 Then open a driver app and watch the verdict card appear on offers.
 Automation is off by default — enable it in **Assist → Automation** when

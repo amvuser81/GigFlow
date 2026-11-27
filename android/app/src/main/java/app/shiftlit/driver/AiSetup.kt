@@ -62,6 +62,10 @@ object AiSetup {
     private const val MAX_SCREEN_NODES = 400
     private const val MAX_NODE_TEXT = 240
 
+    /** Earlier reads are context, not a second tree: keep them small. */
+    private const val MAX_HISTORY_READS = 6
+    private const val MAX_HISTORY_CHARS = 2_400
+
     /** Rule values a provider proposed from an email. Every field is optional. */
     data class Proposal(
         val minPerMileCents: Int? = null,
@@ -152,6 +156,9 @@ Rules:
 - Use null for a role that is not on the screen.
 - Unlabeled clickable nodes have no text; their at= field is the screen
   rectangle, which is how you tell a close button from a nav item.
+- Earlier reads are background only: their indices belong to their own
+  captures, so never take an index from an earlier read. Use them to say
+  whether the miss repeats or the layout changed between reads.
 - The note is shown to the driver: say what stopped the parse and why you
   picked these nodes, in plain words. No jargon."""
 
@@ -203,6 +210,7 @@ Rules:
         decision: List<String>,
         currency: String,
         unit: String,
+        history: List<Diagnostics.Entry> = emptyList(),
     ): ScreenPrompt {
         val sb = StringBuilder()
         sb.append("Driver app: ").append(appName).append(" (").append(pkg).append(")\n")
@@ -216,6 +224,39 @@ Rules:
                 sb.append("  ").append(i + 1).append(". ").append(d).append('\n')
             }
             sb.append('\n')
+        }
+        // The sequence is what turns "it missed once" into "it misses every
+        // time this card appears": same screen, same decision, same texts.
+        val hist = StringBuilder()
+        var budget = MAX_HISTORY_CHARS
+        for (e in history.take(MAX_HISTORY_READS)) {
+            val block = StringBuilder()
+            block.append("  - ").append(e.outcome)
+                .append(" · ").append(e.nodeCount).append(" nodes")
+            if (e.screen.isNotBlank() && e.screen != screen) {
+                block.append(" · screen ").append(e.screen.take(60))
+            }
+            block.append('\n')
+            if (e.decision.isNotEmpty()) {
+                block.append("    decision: ")
+                    .append(e.decision.take(4).joinToString(" / "))
+                    .append('\n')
+            }
+            val head = e.texts.filter { it.isNotBlank() }.take(3)
+            if (head.isNotEmpty()) {
+                block.append("    texts: ")
+                    .append(head.joinToString(" | ") { quoted(it.take(80)) })
+                    .append('\n')
+            }
+            if (block.length > budget) break
+            budget -= block.length
+            hist.append(block)
+        }
+        if (hist.isNotEmpty()) {
+            sb.append("Earlier reads of this app, newest first (their indices are not ")
+                .append("this capture's — use them only to judge whether the miss repeats):\n")
+                .append(hist)
+                .append('\n')
         }
         sb.append("Nodes (index | \"text\" | id | clickable; index is the snapshot position):\n")
         var listed = 0
@@ -326,9 +367,10 @@ Rules:
         decision: List<String>,
         currency: String,
         unit: String,
+        history: List<Diagnostics.Entry> = emptyList(),
     ): FixResult {
         val prompt = screenPrompt(
-            appName, pkg, outcome, screen, nodes, decision, currency, unit,
+            appName, pkg, outcome, screen, nodes, decision, currency, unit, history,
         )
         return when (val r = send(
             provider, apiKey, model, baseUrl, FIX_SYSTEM, prompt.text, 700,

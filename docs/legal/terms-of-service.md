@@ -64,10 +64,11 @@ this project's name or imply it is an official release.
 You own everything the app records. The developer never receives it. Section 1
 of the [privacy policy](privacy-policy.md) lists what is stored and where.
 
-If you use the optional AI setup, the text you paste, or the single captured
-screen you choose to send for a parse fix, is sent by your device to the AI
-provider you selected, under that provider's terms. The developer is not a
-party to that request and never receives the text, the capture or your key.
+If you use the optional AI setup, the text you paste, or the diagnostics you
+choose to send for a parse fix (the latest capture plus a few recent reads), is
+sent by your device to the AI provider you selected, under that provider's
+terms. The developer is not a party to that request and never receives the
+text, the diagnostics or your key.
 
 ## 6. No professional advice
 
