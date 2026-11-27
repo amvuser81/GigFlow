@@ -233,6 +233,10 @@ class GigFlowAccessibilityService : AccessibilityService() {
         } catch (_: Exception) {
             emptyList()
         }
+        // The same symbol and ISO code the parser is about to use: a window
+        // priced in a currency that only the configured regex knows must score
+        // money here, or the window holding the card would look empty.
+        val extra = OfferParser.extraMoney(settings.currencyCode, settings.currencySymbol)
         var candidates = 0
         var found = false
         var bestId = -1
@@ -250,7 +254,7 @@ class GigFlowAccessibilityService : AccessibilityService() {
             // Labels only — no bounds, no ids, no FlatNodes. The winner is
             // flattened once below and that tree goes straight to the parser,
             // so a scan walks the screen twice at most for the whole package.
-            val s = OfferParser.scoreTree(r)
+            val s = OfferParser.scoreTree(r, extra, settings.currencySymbol)
             if (!found || s.score > bestScore) {
                 found = true
                 bestId = w.id
@@ -277,11 +281,7 @@ class GigFlowAccessibilityService : AccessibilityService() {
         rootInActiveWindow?.let {
             if (it.packageName?.toString() == pkg) {
                 val nodes = OfferParser.flatten(it)
-                val s = OfferParser.scoreScreen(
-                    nodes,
-                    OfferParser.extraMoney(settings.currencyCode, settings.currencySymbol),
-                    settings.currencySymbol,
-                )
+                val s = OfferParser.scoreScreen(nodes, extra, settings.currencySymbol)
                 return WindowPick(nodes, -1, -1, pkg, candidates, s.money, s.cues)
             }
             it.recycle() // non-matching roots are ours to free

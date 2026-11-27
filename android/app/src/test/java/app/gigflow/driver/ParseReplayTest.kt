@@ -449,4 +449,23 @@ class ParseReplayTest {
             ).score,
         )
     }
+
+    @Test
+    fun windowScoringUsesTheConfiguredCurrency() {
+        val nodes = listOf(
+            OfferParser.FlatNode("KSh 1 200", null, Bounds(0, 0, 300, 40), false),
+        )
+        assertEquals(
+            "a symbol outside the built-in set must not count on its own",
+            0,
+            OfferParser.scoreScreen(nodes).money,
+        )
+        val extra = OfferParser.extraMoney("KES", "KSh")
+        assertNotNull(extra)
+        assertEquals(
+            "the configured symbol must score the same here as in the parser",
+            1,
+            OfferParser.scoreScreen(nodes, extra, "KSh").money,
+        )
+    }
 }

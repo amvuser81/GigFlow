@@ -253,16 +253,27 @@ object OfferParser {
         var money = 0
         var cues = 0
         for (n in nodes) {
-            if (moneyOf(n.text, extra, extraSymbol) != null) money++
-            if (OFFER_WORDS.containsMatchIn(n.text) ||
-                ACCEPT_WORDS.containsMatchIn(n.text) ||
-                DECLINE_WORDS.containsMatchIn(n.text) ||
-                RESERVE_ACCEPT.containsMatchIn(n.text) ||
-                EXPIRY.containsMatchIn(n.text)
-            ) {
-                cues++
-            }
+            val s = countLabel(n.text, extra, extraSymbol)
+            money += s.money
+            cues += s.cues
         }
+        return ScreenScore(money, cues)
+    }
+
+    /**
+     * One label, counted once. Both scorers go through this, so the cheap tree
+     * walk and the FlatNode scorer can't drift apart on what counts as money or
+     * as a request cue.
+     */
+    private fun countLabel(label: String, extra: Regex?, extraSymbol: String): ScreenScore {
+        if (label.isEmpty()) return ScreenScore(0, 0)
+        val money = if (moneyOf(label, extra, extraSymbol) != null) 1 else 0
+        val cues = if (OFFER_WORDS.containsMatchIn(label) ||
+            ACCEPT_WORDS.containsMatchIn(label) ||
+            DECLINE_WORDS.containsMatchIn(label) ||
+            RESERVE_ACCEPT.containsMatchIn(label) ||
+            EXPIRY.containsMatchIn(label)
+        ) 1 else 0
         return ScreenScore(money, cues)
     }
 
@@ -272,7 +283,12 @@ object OfferParser {
      * and the winner is flattened exactly once afterwards. The root is recycled
      * the way [flatten] does it.
      */
-    fun scoreTree(root: AccessibilityNodeInfo, limit: Int = 400): ScreenScore {
+    fun scoreTree(
+        root: AccessibilityNodeInfo,
+        extra: Regex? = null,
+        extraSymbol: String = "$",
+        limit: Int = 400,
+    ): ScreenScore {
         var money = 0
         var cues = 0
         var seen = 0
@@ -287,17 +303,9 @@ object OfferParser {
             val text = n.text?.toString()?.trim().orEmpty()
             val label = if (text.isNotEmpty()) text
             else n.contentDescription?.toString()?.trim().orEmpty()
-            if (label.isNotEmpty()) {
-                if (moneyOf(label) != null) money++
-                if (OFFER_WORDS.containsMatchIn(label) ||
-                    ACCEPT_WORDS.containsMatchIn(label) ||
-                    DECLINE_WORDS.containsMatchIn(label) ||
-                    RESERVE_ACCEPT.containsMatchIn(label) ||
-                    EXPIRY.containsMatchIn(label)
-                ) {
-                    cues++
-                }
-            }
+            val s = countLabel(label, extra, extraSymbol)
+            money += s.money
+            cues += s.cues
             for (i in 0 until n.childCount) n.getChild(i)?.let(stack::add)
             n.recycle()
         }
