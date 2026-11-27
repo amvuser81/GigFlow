@@ -162,12 +162,12 @@ class AiSetupTest {
             "USD (\$)", "mi",
         )
         assertEquals(3, prompt.listed)
-        assertTrue(prompt.text.contains("\"index\":2"))
-        assertTrue(prompt.text.contains("\"clickable\":true"))
+        assertTrue(prompt.text.contains("0 | \"New offer\""))
+        assertTrue(prompt.text.contains("2 | \"\" | id=x | clickable=true | at=0,20,10,30"))
         assertTrue(prompt.text.contains("no distance and no duration"))
         assertTrue(prompt.text.contains("com.wolt.driver"))
-        // Unlabeled controls need their rectangle; nothing else does.
-        assertTrue(prompt.text.contains("\"at\":\"0,20,10,30\""))
+        // A labeled node carries no rectangle — only unlabeled controls need it.
+        assertFalse(prompt.text.contains("id=t | clickable=false | at="))
     }
 
     @Test

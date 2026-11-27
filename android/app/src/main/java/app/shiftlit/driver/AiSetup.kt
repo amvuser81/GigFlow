@@ -150,7 +150,7 @@ Rules:
   whole card); decline is the control that refuses it, including an unlabeled
   "x". Prefer a node marked clickable for both.
 - Use null for a role that is not on the screen.
-- Unlabeled clickable nodes have no text; their "at" field is the screen
+- Unlabeled clickable nodes have no text; their at= field is the screen
   rectangle, which is how you tell a close button from a nav item.
 - The note is shown to the driver: say what stopped the parse and why you
   picked these nodes, in plain words. No jargon."""
@@ -217,23 +217,21 @@ Rules:
             }
             sb.append('\n')
         }
-        sb.append("Nodes (one JSON object per line; index is the snapshot position):\n")
+        sb.append("Nodes (index | \"text\" | id | clickable; index is the snapshot position):\n")
         var listed = 0
         for ((i, n) in nodes.withIndex()) {
             if (listed >= MAX_SCREEN_NODES) break
-            val o = JSONObject()
-                .put("index", i)
-                .put("text", n.text.take(MAX_NODE_TEXT))
-                .put("id", n.viewId.orEmpty())
-                .put("clickable", n.clickable)
+            val line = StringBuilder()
+                .append(i).append(" | ")
+                .append(quoted(n.text.take(MAX_NODE_TEXT)))
+                .append(" | id=").append(n.viewId.orEmpty().ifBlank { "-" })
+                .append(" | clickable=").append(n.clickable)
+            // Only an unlabeled control needs its rectangle: that is how a
+            // model can tell a close button from a nav icon.
             if (n.text.isBlank() && n.bounds.size == 4) {
-                o.put(
-                    "at",
-                    n.bounds[0].toString() + "," + n.bounds[1] + "," +
-                        n.bounds[2] + "," + n.bounds[3],
-                )
+                line.append(" | at=").append(n.bounds.joinToString(","))
             }
-            val line = o.toString() + "\n"
+            line.append('\n')
             if (sb.length + line.length > MAX_SCREEN_CHARS) break
             sb.append(line)
             listed++
@@ -243,6 +241,22 @@ Rules:
                 .append(" more nodes not shown - use only the indices above)\n")
         }
         return ScreenPrompt(sb.toString(), listed)
+    }
+
+    /** One prompt line's text, quoted and squeezed onto a single line. */
+    private fun quoted(s: String): String {
+        val b = StringBuilder(s.length + 2)
+        b.append('"')
+        for (c in s) {
+            when (c) {
+                '"' -> b.append("\\\"")
+                '\\' -> b.append("\\\\")
+                '\n', '\r', '\t' -> b.append(' ')
+                else -> b.append(c)
+            }
+        }
+        b.append('"')
+        return b.toString()
     }
 
     /**
