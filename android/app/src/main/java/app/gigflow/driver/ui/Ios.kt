@@ -157,10 +157,9 @@ object Ios {
 
     fun verdictColor(v: VerdictCompat, p: Palette) = when (v) {
         VerdictCompat.GOOD -> p.green
-        VerdictCompat.MEH -> p.orange
         VerdictCompat.BAD -> p.red
     }
 
     /** Loose duplicate of the service-side enum for UI use. */
-    enum class VerdictCompat { GOOD, MEH, BAD }
+    enum class VerdictCompat { GOOD, BAD }
 }

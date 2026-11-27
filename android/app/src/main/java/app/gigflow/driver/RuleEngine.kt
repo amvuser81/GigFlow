@@ -49,12 +49,10 @@ object RuleEngine {
         // Strict: one missed rule is enough. Auto-decline keys off BAD, so a
         // card that fails any threshold is declined instead of needing most of
         // them to fail — the old majority band would take a $2.00 job that
-        // cleared per-mile and per-hour but sat under the payout floor.
-        val verdict = when {
-            checks == 0 -> Verdict.MEH // nothing readable to judge (unreachable today: the floor always runs)
-            score == checks -> Verdict.GOOD
-            else -> Verdict.BAD
-        }
+        // cleared per-mile and per-hour but sat under the payout floor. With
+        // no borderline state, nothing readable (checks == 0) is also BAD:
+        // silence must never be mistaken for approval.
+        val verdict = if (checks > 0 && score == checks) Verdict.GOOD else Verdict.BAD
 
         return ScoredOffer(offer, perMile, perHour, verdict, reasons)
     }

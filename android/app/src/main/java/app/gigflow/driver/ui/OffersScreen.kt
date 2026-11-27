@@ -21,7 +21,7 @@ class OffersScreen(ctx: Context, private val p: Palette, private val settings: a
 
     val screen = Screen(ctx, p, "Offers")
     private val ctx: Context = ctx
-    private var filter = 0 // 0 all, 1 good, 2 meh, 3 bad
+    private var filter = 0 // 0 all, 1 good, 2 bad
 
     private fun isKm() = settings.distanceUnit == "KM"
 
@@ -54,7 +54,7 @@ class OffersScreen(ctx: Context, private val p: Palette, private val settings: a
         val segWrap = FrameLayout(ctx).apply {
             setPadding(dp(ctx, 16f), dp(ctx, 4f), dp(ctx, 16f), 0)
         }
-        val seg = IosSegmented(ctx, p, listOf("All", "Good", "Borderline", "Skipped"), initial = filter)
+        val seg = IosSegmented(ctx, p, listOf("All", "Good", "Skipped"), initial = filter)
         seg.onSelected = { filter = it; refresh() }
         segWrap.addView(seg)
         c.addView(segWrap)
@@ -62,8 +62,7 @@ class OffersScreen(ctx: Context, private val p: Palette, private val settings: a
         val entries = OfferLog.all(ctx).filter {
             when (filter) {
                 1 -> it.verdict == "GOOD"
-                2 -> it.verdict == "MEH"
-                3 -> it.verdict == "BAD"
+                2 -> it.verdict == "BAD"
                 else -> true
             }
         }
@@ -89,12 +88,9 @@ class OffersScreen(ctx: Context, private val p: Palette, private val settings: a
     }
 
     private fun offerRow(e: OfferLog.Entry): View {
-        val verdictColor = when (e.verdict) {
-            "GOOD" -> p.green; "MEH" -> p.orange; else -> p.red
-        }
-        val verdictLabel = when (e.verdict) {
-            "GOOD" -> "Good offer"; "MEH" -> "Borderline"; else -> "Skipped"
-        }
+        val good = e.verdict == "GOOD"
+        val verdictColor = if (good) p.green else p.red
+        val verdictLabel = if (good) "Good offer" else "Skipped"
         val app = e.pkg.substringAfterLast('.')
             .replace("driverapp", "Dasher").replaceFirstChar { it.uppercase() }
         val stats = buildString {
@@ -106,6 +102,9 @@ class OffersScreen(ctx: Context, private val p: Palette, private val settings: a
                 if (isNotEmpty()) append(" · ")
                 append(e.action.replace('_', ' '))
             }
+            // Why it was skipped, on the row itself: that is the whole point of
+            // keeping the failed rules with the entry.
+            e.rules?.let { if (isNotEmpty()) append(" · "); append(it) }
         }
 
         val row = LinearLayout(ctx).apply {
@@ -189,6 +188,7 @@ class OffersScreen(ctx: Context, private val p: Palette, private val settings: a
             },
             e.perHourCents?.let { "Per hour" to Ios.money(it, e.currency, code(e)) },
             "Action" to (if (e.action == "shown") "Seen only" else e.action.replace('_', ' ')),
+            e.rules?.let { "Rules failed" to it },
         )
         metrics.forEachIndexed { i, (k, v) ->
             if (i > 0) col.addView(Sections.separator(ctx, p))

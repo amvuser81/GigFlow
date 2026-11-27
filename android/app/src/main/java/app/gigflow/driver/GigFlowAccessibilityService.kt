@@ -545,6 +545,14 @@ class GigFlowAccessibilityService : AccessibilityService() {
 
         val scored = RuleEngine.score(offer, prefs)
         activeOffer = scored
+        // The rules belong in the same trail as the parse. An auto-decline that
+        // skipped a good offer has to be explainable from the screen it saw,
+        // not just from the number it acted on.
+        Diagnostics.note(
+            this, pkg,
+            if (scored.reasons.isEmpty()) "rules all pass"
+            else "rules fail: ${scored.reasons.joinToString(", ")}",
+        )
 
         val loc = lastLocation()
 
@@ -563,15 +571,12 @@ class GigFlowAccessibilityService : AccessibilityService() {
             reservation = offer.isReservation,
             currency = offer.currencySymbol,
             currencyCode = offer.currencyCode,
+            rules = scored.reasons.joinToString(", ").ifBlank { null },
         ))
 
         // Mystro-style voice alert for the verdict, when enabled.
         if (settings.voiceAlerts) {
-            val label = when (scored.verdict) {
-                Verdict.GOOD -> "Good offer"
-                Verdict.MEH -> "Borderline offer"
-                Verdict.BAD -> "Skip it"
-            }
+            val label = if (scored.verdict == Verdict.GOOD) "Good offer" else "Skip it"
             tts?.speak(
                 "$label, ${spokenAmount(offer.payoutCents, offer.currencySymbol, offer.currencyCode)}",
                 TextToSpeech.QUEUE_FLUSH, null, "offer",
@@ -742,6 +747,14 @@ class GigFlowAccessibilityService : AccessibilityService() {
     private fun recordAction(s: ScoredOffer, action: String) {
         val o = s.offer
         if (o.appPackage == "app.gigflow.test") return // test offer — don't log
+        val failed = s.reasons.joinToString(", ").ifBlank { null }
+        // Both halves of the audit: the row carries the failed rules, and the
+        // trail says which action they produced. Manual actions are recorded
+        // the same way so the two can be compared.
+        Diagnostics.note(
+            this, o.appPackage,
+            if (failed == null) "$action (all rules passed)" else "$action — failed: $failed",
+        )
         OfferLog.add(this, OfferLog.Entry(
             at = o.seenAt, pkg = o.appPackage, payoutCents = o.payoutCents,
             distanceKm = o.distanceKm, durationMin = o.durationMin,
@@ -751,6 +764,7 @@ class GigFlowAccessibilityService : AccessibilityService() {
             reservation = o.isReservation,
             currency = o.currencySymbol,
             currencyCode = o.currencyCode,
+            rules = failed,
         ))
     }
 

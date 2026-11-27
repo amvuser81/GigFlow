@@ -37,4 +37,19 @@ class RuleEngineTest {
         assertEquals(Verdict.GOOD, scored.verdict)
         assertTrue(scored.reasons.isEmpty())
     }
+
+    @Test
+    fun reasonsNameEveryFailedRule() {
+        // $2.00 over 60 km: under the floor, under per-mile, and past the
+        // distance cap all at once — the log has to be able to say all three.
+        val scored = RuleEngine.score(
+            offer(payoutCents = 200, distanceKm = 60.0, durationMin = 5.0),
+            RulePrefs(),
+        )
+        assertEquals(Verdict.BAD, scored.verdict)
+        assertEquals(3, scored.reasons.size)
+        assertTrue(scored.reasons.contains("below per-distance target"))
+        assertTrue(scored.reasons.contains("below payout floor"))
+        assertTrue(scored.reasons.contains("too far"))
+    }
 }

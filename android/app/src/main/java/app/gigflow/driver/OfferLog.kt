@@ -27,6 +27,10 @@ object OfferLog {
         /** ISO code when it was known at capture. Rows written before this
          *  existed leave it null and the feed falls back to the setting. */
         val currencyCode: String? = null,
+        /** The rules that failed, comma-joined — null when every rule passed.
+         *  An auto-decline has to be explainable from the log alone, so the
+         *  reason travels with the row instead of only living in Diagnostics. */
+        val rules: String? = null,
     )
 
     private fun load(prefs: android.content.SharedPreferences): JSONArray = try {
@@ -53,6 +57,7 @@ object OfferLog {
         if (e.reservation) o.put("reservation", true)
         o.put("currency", e.currency)
         e.currencyCode?.let { o.put("code", it) }
+        e.rules?.let { o.put("rules", it) }
         val next = JSONArray()
         next.put(o)
         for (i in 0 until minOf(arr.length(), MAX - 1)) next.put(arr.get(i))
@@ -79,6 +84,7 @@ object OfferLog {
                 reservation = o.optBoolean("reservation"),
                 currency = o.optString("currency", "$"),
                 currencyCode = o.optString("code").ifBlank { null },
+                rules = o.optString("rules").ifBlank { null },
             )
         }
     }

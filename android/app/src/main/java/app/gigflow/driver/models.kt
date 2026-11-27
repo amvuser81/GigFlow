@@ -47,7 +47,10 @@ data class DetectedOffer(
         get() = "$appPackage|$payoutCents|${distanceKm}|${durationMin}|${rawTexts.take(6).joinToString("|")}"
 }
 
-enum class Verdict { GOOD, MEH, BAD }
+/** Two outcomes only: every applicable rule passed, or at least one didn't.
+ *  There is no borderline band — auto-accept needs GOOD, auto-decline needs
+ *  anything else, so a third state could only ever be ambiguous. */
+enum class Verdict { GOOD, BAD }
 
 data class ScoredOffer(
     val offer: DetectedOffer,

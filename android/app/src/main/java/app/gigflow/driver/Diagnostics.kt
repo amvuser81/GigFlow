@@ -217,6 +217,37 @@ object Diagnostics {
         ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().clear().apply()
     }
 
+    /**
+     * Append one line to the trail of the last read, and to the top history
+     * entry, without touching the stored tree. For what is only known after
+     * the parse: which rules passed or failed, and what was done about it.
+     * Idempotent — the same line is never added twice.
+     */
+    fun note(ctx: Context, pkg: String, line: String) {
+        val prefs = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        load(ctx, pkg)?.let { o ->
+            val arr = o.optJSONArray("decision") ?: JSONArray()
+            if ((0 until arr.length()).none { arr.optString(it) == line }) {
+                arr.put(line)
+                o.put("decision", arr)
+                prefs.edit().putString(key(pkg), o.toString()).apply()
+            }
+        }
+        val k = HIST_PREFIX + pkg
+        val raw = prefs.getString(k, null) ?: return
+        val hist = try {
+            JSONArray(raw)
+        } catch (_: Exception) {
+            return
+        }
+        val top = hist.optJSONObject(0) ?: return
+        val arr = top.optJSONArray("decision") ?: JSONArray()
+        if ((0 until arr.length()).any { arr.optString(it) == line }) return
+        arr.put(line)
+        top.put("decision", arr)
+        prefs.edit().putString(k, hist.toString()).apply()
+    }
+
     /** The last [MAX_HISTORY] reads of [pkg], newest first. */
     fun history(ctx: Context, pkg: String): List<Entry> {
         val raw = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)

@@ -64,7 +64,6 @@ class OverlayController(private val service: AccessibilityService) {
         val o = scored.offer
         val (bg, fgColor, label) = when (scored.verdict) {
             Verdict.GOOD -> Triple(Color.parseColor("#16915A"), Color.WHITE, "GOOD OFFER")
-            Verdict.MEH -> Triple(Color.parseColor("#B07A0D"), Color.WHITE, "BORDERLINE")
             Verdict.BAD -> Triple(Color.parseColor("#D2432E"), Color.WHITE, "SKIP IT")
         }
 
