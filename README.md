@@ -10,8 +10,7 @@ Based on the MIT-licensed driver assistant by Emre Karaaslan (w0wzahh).
 
 An open-source Android app for rideshare and delivery drivers: reads offers
 on-screen, scores them against your rules, optionally accepts or declines for
-you, and tracks the rest of your work automatically — mileage, earnings, and
-where you actually drive.
+you, and tracks the rest of your work automatically — mileage and earnings.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Android-8.0%2B-3DDC84)](android)
