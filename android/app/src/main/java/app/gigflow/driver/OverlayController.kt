@@ -46,8 +46,8 @@ class OverlayController(private val service: AccessibilityService) {
         tickerHandler.postDelayed(r, 1000)
     }
 
-    private fun money(cents: Int?, symbol: String = "$") =
-        app.gigflow.driver.ui.Ios.money(cents, symbol)
+    private fun money(cents: Int?, symbol: String = "$", code: String? = null) =
+        app.gigflow.driver.ui.Ios.money(cents, symbol, code)
 
     /** Update the auto-accept countdown line, if shown. */
     fun setCountdown(secondsLeft: Int) {
