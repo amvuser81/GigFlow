@@ -1,131 +1,105 @@
 # Shiftlit Terms of Service
 
-**Last updated: September 2026**
+**Last updated: November 2026**
 
-These Terms of Service ("Terms") govern your use of Shiftlit — the web
-application and the Android companion app ("Shiftlit Driver"), together the
-"Service" — operated by the maintainer of the Shiftlit open-source project
-("we", "us"). By creating an account or installing the companion app you
-agree to these Terms. If you do not agree, do not use the Service.
+Shiftlit is a free, open-source Android application released under the MIT
+License. There is no hosted service, no account and no subscription. These
+terms cover your use of the app as distributed by this project.
 
-Shiftlit is open-source software released under the MIT License. These Terms
-apply to the hosted service and to use of the distributed companion app;
-they do not limit the rights the MIT License grants you over the source
-code itself.
+By installing or using Shiftlit you agree to them. If you do not agree,
+uninstall the app. They do not limit any rights the MIT License grants you over
+the source code.
 
 ## 1. What Shiftlit is
 
-Shiftlit is a workspace for rideshare and delivery workers. It lets you
-record earnings, expenses, and mileage; evaluate work offers against rules
-you define; plan your schedule; and review analytics derived from your own
-data.
+A driver's tool. It reads the offer cards that rideshare and delivery apps show
+on your screen, scores them against thresholds you set, and displays a verdict.
+If you enable automation, it can tap accept or decline for you. It also records
+mileage and earnings that you start or that it captures from a completed-trip
+screen.
 
-Shiftlit is an **independent project**. It is not affiliated with, endorsed
-by, sponsored by, or partnered with Uber, Lyft, DoorDash, Wolt, foodora,
-Instacart, Amazon, Walmart, or any other platform referenced by the
-Service. All platform names are trademarks of their respective owners and
-are used only to identify compatibility.
+Shiftlit is an **independent project**. It is not affiliated with, endorsed by,
+sponsored by, or partnered with Uber, Lyft, DoorDash, Wolt, foodora, Instacart,
+Amazon, Walmart, or any other platform it can read. Platform names are
+trademarks of their owners and are used only to identify compatibility.
 
-## 2. Eligibility and your account
+## 2. No account, no service
 
-- You must be at least 18 years old and legally permitted to perform gig
-  work on the platforms you track.
-- You are responsible for keeping your account credentials and API tokens
-  confidential, and for all activity under your account.
-- You are responsible for the accuracy of the data you record or import.
+Nothing is hosted. There is no sign-up, no login, no cloud sync and no data
+stored by the developer. Your records live on your device and disappear when
+you uninstall the app. Keep your own backups of anything you need, for example
+by exporting records before removing the app.
 
 ## 3. Third-party platforms — important
 
-**Shiftlit is a read-and-record tool, not a source of work.** It does not
-give you access to any platform, does not guarantee offers, and cannot
-affect your standing with any platform.
+**Shiftlit is a read-and-record tool, not a source of work.** It does not give
+you access to any platform, does not create offers, and cannot change your
+standing with a platform.
 
-**Automation is your choice and your risk.** The Android companion can, at
-your explicit direction, read offer information shown on your screen via
-Android's accessibility APIs and perform gestures (accept/decline taps,
-countdown-based auto-accept) inside the driver apps you select. When you
-enable these features:
+**Automation is your choice and your risk.** When you turn it on, the app uses
+Android's accessibility APIs to read offer information and to perform gestures
+(accept/decline taps, countdown-based auto-accept) inside the driver apps you
+select. If you enable it:
 
-- You confirm you have the right to use assistive tooling on your device.
-- You accept that **using automation may conflict with a gig platform's
-  terms of service**, and that platforms may restrict, deactivate, or take
-  other action against your account. That risk is entirely yours.
+- You confirm you are allowed to use assistive tooling on your device.
+- You accept that **using automation may conflict with a gig platform's terms
+  of service**, and that a platform may restrict, deactivate or otherwise act
+  against your account. That risk is yours.
 - You remain responsible for every action the software takes at your
   direction, including offers accepted automatically.
 
-We do not circumvent technical protections, do not access platform
-accounts, and do not use platform APIs without authorization. Offer
-detection is heuristic and depends on each app's on-screen layout; it can
-misread or miss data, and the Service makes no promise of accuracy.
+Shiftlit does not circumvent technical protections, does not access platform
+accounts, and does not use platform APIs without authorisation. Offer detection
+is heuristic and depends on each app's on-screen layout; it can misread or miss
+data and makes no promise of accuracy.
 
 ## 4. Acceptable use
 
-You agree not to:
-
-- Use the Service for anything unlawful, or to defraud any platform,
-  customer, or tax authority.
-- Attempt to access another user's data, probe or disrupt the Service's
-  infrastructure, or reverse-engineer the hosted deployment (the source
-  code is already available under the MIT License).
-- Upload data you have no right to store, or use imports to fabricate
-  records for deceptive purposes.
-- Resell or commercially rehost the hosted Service without permission.
+Do not use Shiftlit to break the law, to defraud a platform, customer or tax
+authority, or to fabricate records. Do not redistribute a modified build under
+this project's name or imply it is an official release.
 
 ## 5. Your data
 
-You retain ownership of the data you record. We claim no rights over it
-beyond storing and processing it to provide the Service to you. You can
-export everything as JSON and delete your account — and all associated
-records — at any time from **Settings → Data**.
-
-Offer scoring, automation, and GPS breadcrumbs in the Android companion
-are processed and stored on your device. They reach our servers only if
-you configure sync with a personal API token.
+You own everything the app records. The developer never receives it. Section 1
+of the [privacy policy](privacy-policy.md) lists what is stored and where.
 
 ## 6. No professional advice
 
-Metrics such as per-hour and per-distance earnings, profit estimates,
-mileage totals, and insights are informational calculations derived from
-your data. Shiftlit is **not** tax, accounting, financial, or legal advice,
-and mileage figures are estimates — keep your own records for tax and
-reimbursement purposes.
+Per-hour and per-distance figures, profit estimates, mileage totals and
+insights are calculations from your own data. Shiftlit is **not** tax,
+accounting, financial or legal advice, and mileage figures are estimates — keep
+your own records for tax and reimbursement.
 
-## 7. Availability and changes
+## 7. No warranty
 
-The Service is provided **"as is" and "as available."** We aim for
-reliability but give no uptime guarantee, and we may modify or discontinue
-features at any time. We may update these Terms; material changes are
-announced in the repository release notes, and continued use after the
-change date constitutes acceptance.
+The app is provided **"as is"**, without warranty of any kind, express or
+implied, including fitness for a particular purpose. Driver apps change their
+layouts without notice; parsing can break, and a card can be missed or
+mis-scored.
 
 ## 8. Limitation of liability
 
-To the maximum extent permitted by law: the Service is provided without
-warranties of any kind, express or implied; we are not liable for indirect,
-incidental, or consequential damages — including lost income, lost data,
-account actions taken by gig platforms, or opportunities missed through
-missed or mis-scored offers — arising from your use of the Service; and our
-aggregate liability is limited to the amount you paid for the Service in
-the twelve months before the claim (zero for the free service).
+To the maximum extent permitted by law, the author is not liable for indirect,
+incidental or consequential damages — including lost income, lost data, account
+actions taken by gig platforms, or opportunities missed through a missed or
+mis-scored offer — arising from use of the app. The app is free, so aggregate
+liability is limited to the amount you paid for it (zero). Nothing here
+excludes liability that cannot be excluded by law, and mandatory consumer
+rights you may have (including under EU and UK law) are unaffected.
 
-Nothing in these Terms excludes liability that cannot be excluded by law.
+## 9. Changes and termination
 
-## 9. Termination
-
-You may stop using the Service and delete your account at any time. We may
-suspend or terminate accounts that violate these Terms or abuse the
-Service. Sections that by their nature survive termination (liability,
-disclaimers, your ownership of exported data) survive.
+You may stop using Shiftlit at any time by uninstalling it. These terms may be
+updated in this repository; material changes are noted in the release notes.
 
 ## 10. Governing law
 
-Unless your local consumer-protection law requires otherwise, these Terms
-are governed by the laws applicable in the maintainer's jurisdiction,
-without regard to conflict-of-law rules. Mandatory consumer rights you may
-have (including under EU and UK law) are unaffected.
+Unless your local consumer-protection law requires otherwise, these terms are
+governed by the laws applicable in the maintainer's jurisdiction, without
+regard to conflict-of-law rules.
 
 ## Contact
 
-Questions about these Terms: open an issue at
-<https://github.com/amvuser81/Shiftlit/issues> or reach the maintainer via
-the GitHub repository.
+Questions about these terms: open an issue at
+<https://github.com/amvuser81/Shiftlit/issues>.

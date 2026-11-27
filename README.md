@@ -16,7 +16,6 @@ where you actually drive.
 [![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Android-8.0%2B-3DDC84)](android)
 [![Release](https://img.shields.io/github/v/release/amvuser81/Shiftlit)](https://github.com/amvuser81/Shiftlit/releases)
-[![Open Source](https://img.shields.io/badge/Open%20Source-❤-blueviolet)](https://ko-fi.com/w0wzahh)
 
 </div>
 
@@ -42,7 +41,7 @@ Everything runs on-device. No account required, no subscription, no tracking.
 - **On-screen offer scoring** — watches Uber Driver, Lyft Driver, Dasher,
   Instacart Shopper, Amazon Flex, Spark Driver, Wolt Courier Partner, and
   foodora rider; reads payout, distance, duration; scores against your rules
-- **Floating verdict overlay** — GOOD OFFER / BORDERLINE / SKIP IT with
+- **Floating verdict overlay** — GOOD OFFER / SKIP IT with
   $/distance and $/hour, plus tap-to-accept and tap-to-decline shortcuts
 - **Opt-in automation** — auto-accept on a 3/5/8/10s countdown you can
   cancel, auto-decline, voice alerts. Off by default; you're in control
@@ -55,29 +54,13 @@ Everything runs on-device. No account required, no subscription, no tracking.
   records without typing anything
 - **Diagnostics** — see exactly what the assistant last read inside each
   driver app, so parse misses are debuggable instead of silent
+- **Audit trail** — every skipped offer carries the rule that failed and both
+  numbers it compared (`payout $6.10 < $8.00 floor`), in the offer log, the
+  read history and the overlay, so a bad parse is never silently a skip
 - **Self-updating** — checks GitHub Releases for a newer APK (at most once
   per 6h) and installs it through the system installer when you confirm
 - **100% local** — every record lives in on-device SQLite; the only
   network call is the anonymous GitHub update check
-
-## Screenshots
-
-<div align="center">
-<table>
-  <tr>
-    <td><img src="docs/screenshots/android-home.png" width="220" alt="Dashboard" /></td>
-    <td><img src="docs/screenshots/android-track.png" width="220" alt="Track" /></td>
-    <td><img src="docs/screenshots/android-plan.png" width="220" alt="Schedule" /></td>
-    <td><img src="docs/screenshots/android-assist.png" width="220" alt="Assistant" /></td>
-  </tr>
-  <tr>
-    <td align="center"><sub>Dashboard</sub></td>
-    <td align="center"><sub>Track + shift mileage</sub></td>
-    <td align="center"><sub>Schedule</sub></td>
-    <td align="center"><sub>Assistant rules</sub></td>
-  </tr>
-</table>
-</div>
 
 ## Install
 
@@ -106,11 +89,11 @@ cd android
 
 ## Installing and updating on a phone
 
-**First install (one time).** Every release published before the signing
-change was a debug build: package `app.shiftlit.driver.debug`, signed with
-the throwaway debug key. The signed releases are package
-`app.shiftlit.driver` with the release key, so the phone treats them as a
-different app.
+**Coming from GigFlow.** The rename changed the package id from
+`app.gigflow.driver` to `app.shiftlit.driver`, so Android sees Shiftlit as a
+new app, not an update. Install it alongside the old build, check that offers
+and tracking work, then uninstall GigFlow. Settings, the offer log and the
+diagnostics history live in the old app's private storage and do not migrate.
 
 1. On the phone, open the repo's **Releases** page and download the
    `Shiftlit-x.y.z.apk` you want.
@@ -120,11 +103,9 @@ different app.
 4. Open the downloaded APK and tap **Install**. If Play Protect warns about
    an unknown developer, choose **Install anyway** — the APK is signed by
    your key, not distributed through Play.
-5. The new app installs *alongside* the old `.debug` copy. Open it, check
-   that offers and tracking work, then uninstall the old one (long-press
-   the icon → App info → Uninstall). Local records do not migrate — the
-   history lives in the old app's SQLite file, so keep it until you've
-   exported anything you care about.
+5. On first launch, enable the accessibility service for Shiftlit again —
+   the grant belongs to the old package — and re-check your rules. Then
+   uninstall GigFlow (long-press its icon → App info → Uninstall).
 
 **After that, updates are in place.** The app checks GitHub Releases
 itself (one anonymous GET), downloads the new APK, and hands it to the
@@ -196,9 +177,9 @@ Keep `release.jks` backed up somewhere safe and out of the repo.
 android/           the app — Kotlin, plain Views, near-zero dependencies
   app/src/main/
     java/.../      accessibility service, mileage tracker, parser, overlay,
-                   rule engine, local DB, iOS-style UI
+                   rule engine, local DB, driver-utility UI
     res/           icons, service config, strings
-docs/              legal docs, screenshots, notes
+docs/              legal docs (privacy, terms, cookies)
 ```
 
 ## Honest limitations
@@ -232,6 +213,6 @@ constantly.
 ---
 
 <div align="center">
-Made by <a href="https://github.com/w0wzahh">w0wzahh</a> ·
-<a href="https://ko-fi.com/w0wzahh">Support on Ko-fi</a>
+Based on the original project by
+<a href="https://github.com/w0wzahh">w0wzahh</a>, MIT licensed.
 </div>

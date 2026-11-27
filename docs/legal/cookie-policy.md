@@ -1,30 +1,16 @@
-# Shiftlit Cookie Policy
+# Cookie Policy
 
-**Last updated: September 2026**
+**Last updated: November 2026**
 
-## What we use
+**Shiftlit uses no cookies.**
 
-Shiftlit sets exactly one cookie:
+It is an Android app with no web interface, no account and no server, so there
+is nothing to set a cookie on and no cookie to consent to.
 
-| Cookie | Purpose | Type | Lifetime |
-|---|---|---|---|
-| `shiftlit_session` | Keeps you signed in | Strictly necessary, `HttpOnly`, `SameSite=Lax`, `Secure` in production | 30 days, or until sign-out |
+The only network requests the app makes go to GitHub's public API for update
+checks and, if you choose to update, to download the APK. Those are plain HTTPS
+requests made by the app; they carry no cookie and no identifier, and you can
+see them described in the [privacy policy](privacy-policy.md).
 
-## What we do not use
-
-- No analytics cookies (no Google Analytics, no Plausible, nothing).
-- No advertising or tracking cookies.
-- No third-party cookies at all.
-
-Because the only cookie is strictly necessary for the service to function,
-it does not require consent under the ePrivacy Directive — but you can
-delete or block it at any time in your browser, which simply signs you out.
-
-## Changes
-
-This policy mirrors what the code actually does; it is updated whenever
-cookie behavior changes.
-
-## Contact
-
-<https://github.com/amvuser81/Shiftlit/issues>
+If a future version ever gains a web component, this page will be replaced
+before that version ships.

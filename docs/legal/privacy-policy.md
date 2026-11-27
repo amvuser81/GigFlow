@@ -1,87 +1,100 @@
 # Shiftlit Privacy Policy
 
-**Last updated: September 2026**
+**Last updated: November 2026**
 
-Shiftlit exists to help gig workers keep and understand their own work data.
-This policy explains what is collected, where it lives, and the control you
-have over it. The short version: **your data is yours, the app works
-locally first, and nothing is sent anywhere unless you configure it.**
+Shiftlit is an Android app that runs entirely on your phone. There is no
+account, no sign-in, no server and no sync. This policy describes exactly what
+the app touches, where it stays, and what leaves the device (almost nothing).
 
-## 1. What the web app collects
+## 1. What Shiftlit stores, and where
+
+Everything below lives in the app's private storage on your device. Private
+storage means other apps cannot read it, and it is removed when you uninstall.
 
 | Data | Why |
 |---|---|
-| Account details — name, email, salted password hash | Sign-in and account recovery |
-| Records you enter or import — earnings, expenses, mileage, trips, deliveries, offers, schedules, goals, rules | The core service: dashboards, analytics, planning |
-| Session data — session token (stored hashed), IP address, user agent | Security, abuse prevention, keeping you signed in |
-| Preferences — units, notification settings | To make the app behave the way you set it |
+| Settings and rules — thresholds, currency, units, per-app overrides, automation toggles | So the app behaves the way you set it |
+| Offer log — up to 200 scored offers: payout, distance, duration, verdict, action, the rules that failed | So you can review what was offered and why it was skipped |
+| Diagnostics — the last screen read per app plus up to 20 recent reads per app: the text on screen, the parser's decision trail, which window was used | So a parse miss can be debugged instead of guessed at |
+| Taught mappings — the screen signature and the nodes you pointed at | So a layout the parser can't read can be taught once |
+| Records you create — earnings, expenses, mileage and schedules | The app's own bookkeeping |
+| GPS breadcrumbs — only while a shift is running | To compute distance for that shift |
 
-If you connect the optional **Gmail receipt sync**, OAuth tokens are stored
-encrypted (AES-256-GCM) and used read-only to find trip-receipt emails.
-We never see your Gmail password and cannot send mail.
+## 2. Permissions and what they allow
 
-## 2. What the Android companion collects
+- **Accessibility service** — reads the offer cards rendered by the driver
+  apps you select (Uber, Lyft, Dasher, Instacart, Amazon Flex, Spark, Wolt and
+  foodora riders). It is scoped to those packages and cannot see other apps.
+  It also performs the accept/decline taps, but only when you enable
+  automation.
+- **Location** — used only while a shift is recording, to measure distance.
+  Never outside a shift.
+- **Notifications** — the shift tracker runs as a foreground service and must
+  show a notification while it does.
+- **Install unknown apps** — only if you use the in-app updater; Android asks
+  you to allow it once.
 
-The companion app is **fully local**:
+## 3. What leaves the phone
 
-- **Screen content:** the accessibility service reads offer cards inside
-  the driver apps you choose (Uber, Lyft, Dasher, Instacart, Amazon Flex,
-  Spark, Wolt, foodora). Raw screen content is processed on-device and is
-  never transmitted. Only distilled fields — payout, distance, duration,
-  verdict, action taken — are kept, in a capped on-device log.
-- **Location:** only while an active shift is running (started by you, or
-  automatically if you enable auto-tracking) the app records GPS positions
-  on-device to compute distance. Location is never collected outside a
-  shift and never leaves the phone.
-- **Update checks:** the app makes exactly one kind of network request —
-  a GET to the GitHub Releases API (`api.github.com`) to see if a newer
-  APK exists, and the APK download if you choose to update. No personal
-  data is sent; GitHub sees only an anonymous request from your IP. You
-  can trigger this manually (Assistant → Check for updates) or wait for
-  the automatic check (at most once every 6 hours).
+There are exactly two kinds of network request, both to GitHub:
 
-## 3. What we do not do
+1. **Update check** — a GET to `api.github.com` for this project's latest
+   release, at most once every six hours (or when you tap Check for updates).
+   It contains no personal data; GitHub sees the request and your IP address
+   as any web request would.
+2. **APK download** — only if you choose to install an update.
 
-- No advertising, no analytics SDKs, no tracking pixels, no data sale.
-- No continuous location tracking; no scraping of platform accounts; no
-  access to apps outside the ones you explicitly watch.
+If you tap **Send report**, the app builds a JSON file from the diagnostics
+you selected and hands it to your own email app. Nothing is uploaded by
+Shiftlit. You can read the report before sending it, and you choose whether to
+send it at all.
 
-## 4. Retention and deletion
+There is no analytics, no advertising, no crash reporting, no telemetry and no
+remote configuration.
 
-All data lives in the app's private storage on your device. Delete
-individual records in-app, clear app storage, or uninstall to remove
-everything.
+## 4. What Shiftlit does not do
+
+- No account, no password, no email required.
+- No cookies — the app has no web interface (see the cookie policy).
+- No sale or sharing of data.
+- No reading of apps you did not select.
+- No collection of contacts, messages, photos or files.
+
+## 5. Retention and deletion
+
+Data stays until you remove it:
+
+- Clear the offer log or a diagnostics snapshot inside the app.
+- Delete individual earnings, expenses or shifts in their tabs.
+- Uninstall the app to remove everything, including the database and all
+  preferences. Android deletes private storage on uninstall; there is no
+  backup on our side because there is no server.
 
 ## 6. Security
 
-Salted scrypt password hashing, hashed session tokens, per-user scoping on
-every query, rate-limited auth endpoints, and encrypted integration
-credentials. Details: [SECURITY.md](../../SECURITY.md). No system is
-perfect — report vulnerabilities via GitHub Security Advisories.
+Data is protected by Android's app sandbox. There are no server credentials to
+leak because there is no server. The app is distributed as an APK signed with
+the project's release key, and the updater verifies that it is downloading
+from the project's own GitHub releases. Details: [SECURITY.md](../../SECURITY.md).
 
 ## 7. Your rights
 
-Depending on your jurisdiction (including GDPR in the EU/UK and CCPA in
-California) you may have rights to access, correct, export, or delete your
-data, and to object to processing. The export and account-delete tools
-satisfy most of these directly; for anything else, open an issue or
-contact the maintainer.
-
-Self-hosted deployments: whoever runs your instance is the data
-controller, not the upstream project.
+Because the developer never receives your data, access/correction/erasure
+requests are satisfied on the device: everything is visible, exportable or
+deletable in the app, and uninstalling removes it. If you believe a report you
+sent by email should be deleted, open an issue and say so.
 
 ## 8. Children
 
-The Service is for adults legally able to perform gig work (18+). We do
-not knowingly collect data from children.
+Shiftlit is intended for people legally able to perform gig work (18+). It is
+not directed at children and collects nothing from them.
 
 ## 9. Changes
 
-Material changes are committed to this repository and noted in release
-notes; the "Last updated" date above reflects the current version.
+Material changes are committed to this repository and noted in the release
+notes. The date above reflects the current version.
 
 ## Contact
 
-Privacy questions or requests:
-<https://github.com/amvuser81/Shiftlit/issues> (for account-data requests,
-include the email on the account).
+Privacy questions: open an issue at
+<https://github.com/amvuser81/Shiftlit/issues>.
