@@ -47,23 +47,6 @@ class AssistScreen(
         c.addView(automationCard())
         c.addView(Sections.header(ctx, p, "Offer rules"))
         c.addView(rulesCard())
-        c.addView(Sections.header(ctx, p, "AI setup — optional"))
-        c.addView(aiSetupCard(
-            ctx, p, settings,
-            onChanged = { refresh() },
-            lastDiagnostics = {
-                watchedApps.mapNotNull { (name, pkg) ->
-                    Diagnostics.get(ctx, pkg)?.let { Triple(name, pkg, it) }
-                }.maxByOrNull { it.third.at }?.let { (name, pkg, snap) ->
-                    diagReport(name, pkg, snap).body
-                }
-            },
-            captures = {
-                watchedApps.mapNotNull { (name, pkg) ->
-                    Diagnostics.get(ctx, pkg)?.let { ScreenCapture(name, pkg, it) }
-                }
-            },
-        ))
         c.addView(Sections.header(ctx, p, "Per-app rules"))
         c.addView(perAppCard())
         c.addView(TextView(ctx).apply {
@@ -333,15 +316,13 @@ class AssistScreen(
                 setPadding(0, 0, 0, dp(ctx, 6f))
             })
         }
-        // The AI alternative to pointing at the card: same capture, provider
-        // proposes the node mapping, and the sheet test-parses it before it can
-        // be saved. Shown only once a key exists — without one it would just
-        // dead-end at the setup card.
+        // AI lives here, next to the parsed tree: this is where a miss is
+        // looked at, so this is where the key is set up and used. Nothing is
+        // sent by these taps until the driver asks for a fix.
         val aiPkg = watchedApps.firstOrNull { it.first == name }?.second
-        if (snap.outcome == "miss" && snap.nodes.isNotEmpty() &&
-            settings.aiKey.isNotBlank() && aiPkg != null
-        ) {
-            val provider = settings.aiProviderOrDefault()
+        val provider = settings.aiProviderOrDefault()
+        val hasKey = settings.aiKey.isNotBlank()
+        if (snap.outcome == "miss" && snap.nodes.isNotEmpty() && aiPkg != null) {
             col.addView(TextView(ctx).apply {
                 text = "Ask " + provider.label + " to fix this screen"
                 textSize = Ios.T_BODY; setTypeface(typeface, Typeface.BOLD)
@@ -349,17 +330,36 @@ class AssistScreen(
                 setPadding(0, dp(ctx, 14f), 0, dp(ctx, 6f))
                 setOnClickListener {
                     sheet.dismiss()
-                    screenFixSheet(ctx, p, settings, { refresh() }, name, aiPkg, snap)
+                    if (hasKey) {
+                        screenFixSheet(ctx, p, settings, { refresh() }, name, aiPkg, snap)
+                    } else {
+                        Toast.makeText(ctx, "Add your API key first", Toast.LENGTH_SHORT).show()
+                        aiSettingsSheet(ctx, p, settings) { refresh() }
+                    }
                 }
             })
             col.addView(TextView(ctx).apply {
-                text = "Sends this screen's captured text to " + provider.label +
-                    " with your key. Nothing is saved unless the mapping it proposes parses."
+                text = if (hasKey)
+                    "Sends this screen and the app's recent reads to " + provider.label +
+                        " with your key. Nothing is saved unless the mapping it proposes parses."
+                else
+                    "Needs your own API key — tap here to add one. Nothing is sent until you ask."
                 textSize = Ios.T_CAPTION; setTextColor(p.label3)
                 gravity = android.view.Gravity.CENTER
-                setPadding(0, 0, 0, dp(ctx, 8f))
+                setPadding(0, 0, 0, dp(ctx, 4f))
             })
         }
+        col.addView(TextView(ctx).apply {
+            text = "AI setup · " + provider.label +
+                if (hasKey) " · key saved" else " · no key yet"
+            textSize = Ios.T_FOOTNOTE; setTextColor(p.tint)
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, dp(ctx, 10f), 0, 0)
+            setOnClickListener {
+                sheet.dismiss()
+                aiSettingsSheet(ctx, p, settings) { refresh() }
+            }
+        })
         // Only for a screen that didn't parse: a report costs the maintainer
         // time, and a scored screen has nothing to report. Nothing is ever sent
         // on its own — the button only opens a mail the user must send.
@@ -1311,17 +1311,17 @@ class AssistScreen(
     private fun creditsCard(): View {
         val card = Sections.card(ctx, p)
         card.addView(Sections.row(ctx, p,
-            title = "Made by w0wzahh",
-            subtitle = "Open source · feedback welcome",
+            title = "Made by amvuser81",
+            subtitle = "Shiftlit · open source",
             iconGlyph = "person", iconTint = p.tint,
         ))
         card.addView(Sections.separator(ctx, p))
         card.addView(Sections.row(ctx, p,
-            title = "GitHub",
-            subtitle = "github.com/w0wzahh",
+            title = "Project repository",
+            subtitle = "github.com/amvuser81/Shiftlit",
             iconGlyph = "link", iconTint = p.gray,
             chevron = true,
-        ) { openUrl("https://github.com/w0wzahh") })
+        ) { openUrl("https://github.com/amvuser81/Shiftlit") })
         return card
     }
 

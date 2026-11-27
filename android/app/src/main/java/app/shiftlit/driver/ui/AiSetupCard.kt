@@ -22,117 +22,94 @@ import app.shiftlit.driver.SettingsRepository
 import app.shiftlit.driver.ui.Ios.Palette
 import app.shiftlit.driver.ui.Ios.dp
 
-/** One captured screen offered to the AI, with the app it came from. */
-data class ScreenCapture(val name: String, val pkg: String, val snap: Diagnostics.Snap)
 
 /**
- * "AI setup" — optional, bring your own key.
+ * AI setup, where it is used: from the diagnostics sheet.
  *
- * The assistant works without any of this. What it adds is two second ways to
- * set it up with the driver's own key: paste an email for rule values, or hand
- * it a screen the parser missed so it can point at the payout, distance,
- * duration and buttons. Neither writes anything until the driver taps Apply.
+ * Optional and bring-your-own-key. The one request it enables is a captured
+ * screen the driver explicitly asks about, sent from this phone straight to
+ * the provider. There is no Shiftlit server in that path.
  */
-fun aiSetupCard(
+fun aiSettingsSheet(
     ctx: Context,
     p: Palette,
     settings: SettingsRepository,
     onChanged: () -> Unit,
-    lastDiagnostics: (() -> String?)? = null,
-    captures: (() -> List<ScreenCapture>)? = null,
-): View {
-    val card = Sections.card(ctx, p)
-    val provider = settings.aiProviderOrDefault()
+) {
+    val sheet = IosSheet(ctx, p)
+    val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+    sheet.add(col)
 
-    card.addView(Sections.row(ctx, p,
-        title = "AI provider",
-        subtitle = if (provider == AiProvider.CUSTOM)
-            settings.aiBaseUrl.ifBlank { "No endpoint yet" }
-        else provider.defaultModel,
-        value = provider.label,
-        iconGlyph = "bolt", iconTint = p.tint,
-        chevron = true,
-    ) { providerSheet(ctx, p, settings, onChanged) })
-    card.addView(Sections.separator(ctx, p))
-
-    if (provider == AiProvider.CUSTOM) {
-        card.addView(Sections.row(ctx, p,
-            title = "Endpoint",
-            subtitle = "HTTPS only — your key goes straight there",
-            value = settings.aiBaseUrl.ifBlank { "Not set" },
-            iconGlyph = "link", iconTint = p.gray,
+    fun render() {
+        col.removeAllViews()
+        val provider = settings.aiProviderOrDefault()
+        col.addView(sheetColumn(ctx, p, "AI setup",
+            "Optional, used only to fix a screen the parser missed. Your key stays in this " +
+                "app's private storage and goes only to " + provider.label + "."))
+        col.addView(Sections.row(ctx, p,
+            title = "Provider",
+            subtitle = if (provider == AiProvider.CUSTOM)
+                settings.aiBaseUrl.ifBlank { "No endpoint yet" }
+            else provider.defaultModel,
+            value = provider.label,
+            iconGlyph = "bolt", iconTint = p.tint,
             chevron = true,
-        ) { endpointSheet(ctx, p, settings, onChanged) })
-        card.addView(Sections.separator(ctx, p))
+        ) { providerSheet(ctx, p, settings) { render() } })
+        col.addView(Sections.separator(ctx, p))
+
+        if (provider == AiProvider.CUSTOM) {
+            col.addView(Sections.row(ctx, p,
+                title = "Endpoint",
+                subtitle = "HTTPS only — your key goes straight there",
+                value = if (settings.aiBaseUrl.isBlank()) "Not set" else "Saved",
+                iconGlyph = "link", iconTint = p.gray,
+                chevron = true,
+            ) { endpointSheet(ctx, p, settings) { render() } })
+            col.addView(Sections.separator(ctx, p))
+        }
+
+        col.addView(Sections.row(ctx, p,
+            title = "API key",
+            subtitle = if (settings.aiKey.isBlank())
+                "You need a key from " + provider.label
+            else "Saved on this phone, sent only to this provider",
+            value = if (settings.aiKey.isBlank()) "Not set" else "Saved",
+            iconGlyph = "doc",
+            iconTint = if (settings.aiKey.isBlank()) p.orange else p.green,
+            chevron = true,
+        ) { keySheet(ctx, p, settings) { render() } })
+        col.addView(Sections.separator(ctx, p))
+
+        col.addView(Sections.row(ctx, p,
+            title = "Model",
+            subtitle = settings.aiModel.ifBlank {
+                provider.defaultModel.ifBlank { "Set a model name" }
+            },
+            iconGlyph = "slider", iconTint = p.gray,
+            chevron = true,
+        ) { modelSheet(ctx, p, settings) { render() } })
+        col.addView(TextView(ctx).apply {
+            text = "Nothing is sent until you tap Ask in Diagnostics. Every other feature " +
+                "works without a key."
+            textSize = Ios.T_CAPTION
+            setTextColor(p.label3)
+            setPadding(dp(ctx, 16f), dp(ctx, 8f), dp(ctx, 16f), 0)
+        })
+        col.addView(TextView(ctx).apply {
+            text = "Done"
+            textSize = Ios.T_BODY
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(p.tint)
+            gravity = Gravity.CENTER
+            setPadding(0, dp(ctx, 14f), 0, dp(ctx, 4f))
+            setOnClickListener {
+                sheet.dismiss()
+                onChanged()
+            }
+        })
     }
-
-    card.addView(Sections.row(ctx, p,
-        title = "API key",
-        subtitle = if (settings.aiKey.isBlank())
-            "You need a key from the provider you picked"
-        else "Saved on this phone, sent only to this provider",
-        value = if (settings.aiKey.isBlank()) "Not set" else "Saved",
-        iconGlyph = "doc",
-        iconTint = if (settings.aiKey.isBlank()) p.orange else p.green,
-        chevron = true,
-    ) { keySheet(ctx, p, settings, onChanged) })
-    card.addView(Sections.separator(ctx, p))
-
-    card.addView(Sections.row(ctx, p,
-        title = "Model",
-        subtitle = "Blank uses the provider's default",
-        value = settings.aiModel.ifBlank { provider.defaultModel.ifBlank { "Set a model" } },
-        iconGlyph = "slider", iconTint = p.gray,
-        chevron = true,
-    ) { modelSheet(ctx, p, settings, onChanged) })
-    card.addView(Sections.separator(ctx, p))
-
-    card.addView(Sections.row(ctx, p,
-        title = "Set rules from an email",
-        subtitle = if (settings.aiKey.isBlank())
-            "Add your API key first"
-        else "Paste an email; review the proposed thresholds, then apply",
-        iconGlyph = "tag", iconTint = p.tint,
-        chevron = true,
-    ) {
-        if (settings.aiKey.isBlank()) {
-            Toast.makeText(ctx, "Add your API key first", Toast.LENGTH_SHORT).show()
-            keySheet(ctx, p, settings, onChanged)
-        } else {
-            emailSheet(ctx, p, settings, onChanged, lastDiagnostics)
-        }
-    })
-    card.addView(Sections.separator(ctx, p))
-
-    card.addView(Sections.row(ctx, p,
-        title = "Fix a missed screen",
-        subtitle = if (settings.aiKey.isBlank())
-            "Add your API key first"
-        else if (captures == null)
-            "Open Diagnostics on a screen the assistant missed"
-        else "It reads one capture, explains the miss, and points at the payout, distance and buttons",
-        iconGlyph = "grid", iconTint = p.tint,
-        chevron = true,
-    ) {
-        if (settings.aiKey.isBlank()) {
-            Toast.makeText(ctx, "Add your API key first", Toast.LENGTH_SHORT).show()
-            keySheet(ctx, p, settings, onChanged)
-        } else if (captures == null) {
-            Toast.makeText(ctx, "Open Diagnostics on a missed screen instead", Toast.LENGTH_SHORT).show()
-        } else {
-            capturePicker(ctx, p, settings, onChanged, captures)
-        }
-    })
-
-    card.addView(TextView(ctx).apply {
-        text = "Optional. Your key stays in this app's private storage. Only the email you paste " +
-            "or the one screen you pick goes to the provider you choose, and only when you tap " +
-            "Ask. Shiftlit runs no server."
-        textSize = Ios.T_CAPTION
-        setTextColor(p.label3)
-        setPadding(dp(ctx, 16f), dp(ctx, 6f), dp(ctx, 16f), dp(ctx, 10f))
-    })
-    return card
+    render()
+    sheet.show()
 }
 
 private fun sheetColumn(ctx: Context, p: Palette, title: String, subtitle: String): LinearLayout =
@@ -204,13 +181,17 @@ private fun keySheet(
         setHintTextColor(p.label3)
         setTextColor(p.label)
         textSize = Ios.T_BODY
-        setSingleLine()
         inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        setPadding(dp(ctx, 14f), dp(ctx, 12f), dp(ctx, 14f), dp(ctx, 12f))
+        setSingleLine()
+        maxLines = 1
+        minLines = 1
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(ctx, 14f), 0, dp(ctx, 14f), 0)
         background = Ios.rounded(Ios.R_BUTTON, p.fill, ctx)
     }
+    // A fixed height: a wrapping field used to grow until it filled the sheet.
     col.addView(field, LinearLayout.LayoutParams(
-        LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        LinearLayout.LayoutParams.MATCH_PARENT, dp(ctx, 48f)))
     sheet.add(col)
 
     val save = iosButton(ctx, p, "Save key")
@@ -260,13 +241,16 @@ private fun modelSheet(
         setTextColor(p.label)
         textSize = Ios.T_BODY
         setText(settings.aiModel)
-        setSingleLine()
         inputType = InputType.TYPE_CLASS_TEXT
-        setPadding(dp(ctx, 14f), dp(ctx, 12f), dp(ctx, 14f), dp(ctx, 12f))
+        setSingleLine()
+        maxLines = 1
+        minLines = 1
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(ctx, 14f), 0, dp(ctx, 14f), 0)
         background = Ios.rounded(Ios.R_BUTTON, p.fill, ctx)
     }
     col.addView(field, LinearLayout.LayoutParams(
-        LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        LinearLayout.LayoutParams.MATCH_PARENT, dp(ctx, 48f)))
     sheet.add(col)
     val save = iosButton(ctx, p, "Save model")
     sheet.add(LinearLayout(ctx).apply {
@@ -294,13 +278,16 @@ private fun endpointSheet(
         setTextColor(p.label)
         textSize = Ios.T_BODY
         setText(settings.aiBaseUrl)
-        setSingleLine()
         inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-        setPadding(dp(ctx, 14f), dp(ctx, 12f), dp(ctx, 14f), dp(ctx, 12f))
+        setSingleLine()
+        maxLines = 1
+        minLines = 1
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(ctx, 14f), 0, dp(ctx, 14f), 0)
         background = Ios.rounded(Ios.R_BUTTON, p.fill, ctx)
     }
     col.addView(field, LinearLayout.LayoutParams(
-        LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        LinearLayout.LayoutParams.MATCH_PARENT, dp(ctx, 48f)))
     sheet.add(col)
     val save = iosButton(ctx, p, "Save endpoint")
     sheet.add(LinearLayout(ctx).apply {
@@ -317,192 +304,6 @@ private fun endpointSheet(
         sheet.dismiss()
         onChanged()
     }
-    sheet.show()
-}
-
-private fun emailSheet(
-    ctx: Context,
-    p: Palette,
-    settings: SettingsRepository,
-    onChanged: () -> Unit,
-    lastDiagnostics: (() -> String?)?,
-) {
-    val provider = settings.aiProviderOrDefault()
-    val isKm = settings.distanceUnit == "KM"
-    val unit = if (isKm) "km" else "mi"
-    val sheet = IosSheet(ctx, p)
-    val col = sheetColumn(ctx, p, "Set rules from an email",
-        "Paste an email or your own notes — a welcome mail, a rate card, what you actually " +
-            "want to earn. " + provider.label + " reads it with your key and proposes thresholds.")
-
-    val field = EditText(ctx).apply {
-        hint = "Paste the whole email here…"
-        setHintTextColor(p.label3)
-        setTextColor(p.label)
-        textSize = Ios.T_BODY
-        gravity = Gravity.TOP or Gravity.START
-        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or
-            InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-        minLines = 6
-        maxLines = 10
-        setPadding(dp(ctx, 14f), dp(ctx, 12f), dp(ctx, 14f), dp(ctx, 12f))
-        background = Ios.rounded(Ios.R_BUTTON, p.fill, ctx)
-    }
-    col.addView(field, LinearLayout.LayoutParams(
-        LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-
-    if (lastDiagnostics != null) {
-        col.addView(TextView(ctx).apply {
-            text = "Use the last diagnostics read"
-            textSize = Ios.T_FOOTNOTE
-            setTextColor(p.tint)
-            setPadding(0, dp(ctx, 8f), 0, 0)
-            setOnClickListener {
-                val dump = lastDiagnostics()
-                if (dump.isNullOrBlank()) {
-                    Toast.makeText(ctx, "No diagnostics read yet", Toast.LENGTH_SHORT).show()
-                } else {
-                    field.setText(dump)
-                    field.setSelection(field.text.length)
-                }
-            }
-        })
-    }
-
-    val status = TextView(ctx).apply {
-        textSize = Ios.T_FOOTNOTE
-        setTextColor(p.label2)
-        setPadding(0, dp(ctx, 10f), 0, 0)
-    }
-    col.addView(status)
-
-    val ask = iosButton(ctx, p, "Ask " + provider.label)
-    col.addView(ask, LinearLayout.LayoutParams(
-        LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-        .apply { topMargin = dp(ctx, 12f) })
-
-    val resultBox = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-    col.addView(resultBox)
-    sheet.add(col)
-
-    var proposal: AiSetup.Proposal? = null
-
-    fun renderResult() {
-        resultBox.removeAllViews()
-        val prop = proposal ?: return
-        fun line(body: String, size: Float, color: Int, top: Float, bold: Boolean) {
-            resultBox.addView(TextView(ctx).apply {
-                this.text = body
-                textSize = size
-                setTextColor(color)
-                if (bold) setTypeface(typeface, Typeface.BOLD)
-                setPadding(0, dp(ctx, top), 0, 0)
-            })
-        }
-        line("Proposed rules", Ios.T_FOOTNOTE, p.label3, 14f, bold = true)
-        prop.minPerMileCents?.let {
-            resultBox.addView(ruleRow(ctx, p,
-                "Min per " + unit, Ios.money(it, settings.currencySymbol, settings.currencyCode)))
-        }
-        prop.minPerHourCents?.let {
-            resultBox.addView(ruleRow(ctx, p,
-                "Min per hour", Ios.money(it, settings.currencySymbol, settings.currencyCode)))
-        }
-        prop.minPayoutCents?.let {
-            resultBox.addView(ruleRow(ctx, p,
-                "Min payout", Ios.money(it, settings.currencySymbol, settings.currencyCode)))
-        }
-        prop.maxDistanceKm(unit)?.let { km ->
-            val shown = if (isKm) km else km / 1.609344
-            resultBox.addView(ruleRow(ctx, p,
-                "Max distance", "%.1f %s".format(shown, unit)))
-        }
-        prop.note?.let { line(it, Ios.T_FOOTNOTE, p.label2, 8f, false) }
-        prop.currencyCode?.let { code ->
-            if (Currencies.forCode(code) != null && code != settings.currencyCode) {
-                line("Currency: " + code + " — it is applied with the rules.", Ios.T_FOOTNOTE,
-                    p.label2, 6f, false)
-            }
-        }
-        if (!prop.hasRules) {
-            line("No rule values in that text. Try an email that names rates.", Ios.T_FOOTNOTE,
-                p.orange, 8f, false)
-            return
-        }
-        line("Check these before applying — the model can misread an email.",
-            Ios.T_CAPTION, p.label3, 8f, false)
-        val apply = iosButton(ctx, p, "Apply these rules", p.green)
-        resultBox.addView(apply, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            .apply { topMargin = dp(ctx, 10f) })
-        apply.setOnClickListener {
-            prop.minPerMileCents?.let { settings.minPerMileCents = it }
-            prop.minPerHourCents?.let { settings.minPerHourCents = it }
-            prop.minPayoutCents?.let { settings.minPayoutCents = it }
-            prop.maxDistanceKm(unit)?.let { settings.maxDistanceKm = it }
-            prop.currencyCode?.let { code ->
-                if (Currencies.forCode(code) != null) settings.currencyCode = code
-            }
-            sheet.dismiss()
-            Toast.makeText(ctx, "Rules applied", Toast.LENGTH_SHORT).show()
-            onChanged()
-        }
-    }
-
-    ask.setOnClickListener {
-        val text = field.text.toString().trim()
-        if (text.length < 20) {
-            status.setTextColor(p.orange)
-            status.text = "Paste a bit more — the AI needs the actual email text."
-            return@setOnClickListener
-        }
-        val current = buildString {
-            append("min per ").append(unit).append(' ')
-            append("%.2f".format(if (isKm) settings.minPerMileCents / 1.609344 / 100.0
-                                 else settings.minPerMileCents / 100.0))
-            append(", min per hour ").append("%.2f".format(settings.minPerHourCents / 100.0))
-            append(", min payout ").append("%.2f".format(settings.minPayoutCents / 100.0))
-            append(", max distance ")
-            append("%.1f".format(if (isKm) settings.maxDistanceKm
-                                 else settings.maxDistanceKm / 1.609344))
-            append(' ').append(unit)
-        }
-        val sent = text.take(8000).length
-        proposal = null
-        resultBox.removeAllViews()
-        status.setTextColor(p.label2)
-        status.text = "Sending " + sent + " characters to " + provider.label + ". Nothing else leaves the phone."
-        ask.isEnabled = false
-        ask.text = "Asking " + provider.label + "…"
-        Thread {
-            val result = AiSetup.ask(
-                provider = provider,
-                apiKey = settings.aiKey,
-                model = settings.aiModel,
-                baseUrl = settings.aiBaseUrl,
-                email = text,
-                currency = settings.currencyCode + " (" + settings.currencySymbol + ")",
-                unit = unit,
-                current = current,
-            )
-            field.post {
-                ask.isEnabled = true
-                ask.text = "Ask " + provider.label
-                when (result) {
-                    is AiSetup.Result.Err -> {
-                        status.setTextColor(p.orange)
-                        status.text = result.message
-                    }
-                    is AiSetup.Result.Ok -> {
-                        status.text = ""
-                        proposal = result.proposal
-                        renderResult()
-                    }
-                }
-            }
-        }.start()
-    }
-
     sheet.show()
 }
 
@@ -529,66 +330,6 @@ private fun openUrl(ctx: Context, url: String) {
     } catch (_: Exception) {
         Toast.makeText(ctx, url, Toast.LENGTH_SHORT).show()
     }
-}
-
-private fun ago(at: Long): String {
-    val s = (System.currentTimeMillis() - at) / 1000
-    return when {
-        s < 60 -> "just now"
-        s < 3600 -> "${s / 60}m ago"
-        s < 86400 -> "${s / 3600}h ago"
-        else -> "${s / 86400}d ago"
-    }
-}
-
-/** Pick which captured screen to hand to the provider. */
-private fun capturePicker(
-    ctx: Context,
-    p: Palette,
-    settings: SettingsRepository,
-    onChanged: () -> Unit,
-    captures: () -> List<ScreenCapture>,
-) {
-    val list = captures().filter { it.snap.nodes.isNotEmpty() }
-        .sortedByDescending { it.snap.at }
-    val provider = settings.aiProviderOrDefault()
-    val sheet = IosSheet(ctx, p)
-    val col = sheetColumn(ctx, p, "Fix a missed screen",
-        "Pick one capture. Its node text goes to " + provider.label + " with your key; the " +
-            "mapping it proposes is tested on that capture and only saved when you say so.")
-
-    if (list.isEmpty()) {
-        col.addView(TextView(ctx).apply {
-            text = "No screen captured yet. Open a driver app, let Shiftlit read an offer " +
-                "card, then come back — or use Diagnostics on a screen that missed."
-            textSize = Ios.T_FOOTNOTE
-            setTextColor(p.label2)
-            setPadding(0, dp(ctx, 4f), 0, 0)
-        })
-    }
-    list.take(8).forEach { c ->
-        col.addView(Sections.row(ctx, p,
-            title = c.name,
-            subtitle = c.snap.outcome + " · " + c.snap.nodes.size + " nodes · " +
-                ago(c.snap.at),
-            iconGlyph = "grid", iconTint = p.tint,
-            chevron = true,
-        ) {
-            sheet.dismiss()
-            screenFixSheet(ctx, p, settings, onChanged, c.name, c.pkg, c.snap)
-        })
-        col.addView(Sections.separator(ctx, p))
-    }
-    col.addView(TextView(ctx).apply {
-        text = "Cancel"
-        textSize = Ios.T_BODY
-        setTypeface(typeface, Typeface.BOLD)
-        setTextColor(p.tint)
-        gravity = Gravity.CENTER
-        setPadding(0, dp(ctx, 12f), 0, dp(ctx, 4f))
-        setOnClickListener { sheet.dismiss() }
-    })
-    sheet.add(col).show()
 }
 
 /**

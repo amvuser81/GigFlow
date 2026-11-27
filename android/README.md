@@ -100,6 +100,6 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - Everything is on-device: screen content, offers, records, GPS. The network
   calls are the anonymous GitHub Releases update check (and the APK download
   if you update) plus, only if you add your own key, the AI provider you
-  choose in AI setup — and only for the email or single captured screen you
-  explicitly hand it.
+  choose in AI setup — and only for the captured screen you explicitly hand
+  it.
 - Records live in `shiftlit.db` (SQLite, private app storage).

@@ -6,19 +6,16 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * Optional AI-assisted setup: the driver brings their own API key, pastes an
- * email, and the provider they chose turns it into rule values.
+ * Optional AI-assisted setup: the driver brings their own API key. When the
+ * assistant misses an offer card, the provider reads the same diagnostics
+ * capture a human maintainer would get, explains the miss, and points at the
+ * nodes that hold the payout, distance, duration and accept/decline controls.
  *
- * It has a second job: when the assistant misses an offer card, the AI can
- * read the same diagnostics capture a human maintainer would get, explain the
- * miss, and point at the nodes that hold the payout, distance, duration and
- * accept/decline controls. That mapping is saved as an ordinary taught hint —
- * the identical mechanism the point-at-the-card flow uses — so it is tested
- * against the capture before anything is written.
- *
- * Nothing here is required by the assistant and nothing is proxied: the request
- * goes from this phone straight to the provider, with the key the driver
- * entered. There is no Shiftlit server to send anything to.
+ * That mapping is saved as an ordinary taught hint — the identical mechanism
+ * the point-at-the-card flow uses — so it is tested against the capture before
+ * anything is written. Nothing here is required by the assistant and nothing
+ * is proxied: the request goes from this phone straight to the provider, with
+ * the key the driver entered. There is no Shiftlit server to send anything to.
  */
 enum class AiProvider(
     val label: String,
@@ -54,9 +51,6 @@ enum class AiProvider(
 
 object AiSetup {
 
-    /** Bounds the prompt cost when someone pastes a long diagnostics dump. */
-    private const val MAX_EMAIL_CHARS = 8000
-
     /** One diagnostics capture is bounded instead of trimmed by the caller. */
     private const val MAX_SCREEN_CHARS = 20_000
     private const val MAX_SCREEN_NODES = 400
@@ -65,37 +59,6 @@ object AiSetup {
     /** Earlier reads are context, not a second tree: keep them small. */
     private const val MAX_HISTORY_READS = 6
     private const val MAX_HISTORY_CHARS = 2_400
-
-    /** Rule values a provider proposed from an email. Every field is optional. */
-    data class Proposal(
-        val minPerMileCents: Int? = null,
-        val minPerHourCents: Int? = null,
-        val minPayoutCents: Int? = null,
-        val maxDistance: Double? = null,
-        val unit: String? = null,
-        val currencyCode: String? = null,
-        val note: String? = null,
-    ) {
-        val hasRules: Boolean
-            get() = minPerMileCents != null || minPerHourCents != null ||
-                minPayoutCents != null || maxDistance != null
-
-        /**
-         * The proposed distance in km. The model is asked to echo the driver's
-         * unit, so a reply that names miles is converted rather than trusted to
-         * be in the driver's unit.
-         */
-        fun maxDistanceKm(driverUnit: String): Double? {
-            val v = maxDistance ?: return null
-            val u = (unit ?: driverUnit).lowercase()
-            return if (u.startsWith("k")) v else v * 1.609344
-        }
-    }
-
-    sealed class Result {
-        data class Ok(val proposal: Proposal) : Result()
-        data class Err(val message: String) : Result()
-    }
 
     /** Node indices the provider chose on one captured screen. */
     data class ScreenFix(
@@ -121,22 +84,6 @@ object AiSetup {
         data class Err(val message: String) : FixResult()
     }
 
-    private const val SYSTEM = """You turn a driver's email into rules for Shiftlit, an offer-scoring app.
-Answer with exactly one JSON object and nothing else - no prose, no code fence:
-
-{"min_per_mile": number|null, "min_per_hour": number|null,
- "min_payout": number|null, "max_distance": number|null,
- "unit": "mi"|"km"|null, "currency": "ISO 4217 code"|null,
- "note": "one or two sentences"}
-
-Rules:
-- Amounts are in the driver's own currency units, never cents.
-- max_distance uses the distance unit given below; echo that unit in "unit".
-- Only use numbers the email supports. Use null when it does not say.
-- Echo the driver's currency unless the email clearly names another one.
-- The note explains the proposal and flags anything rules cannot express
-  (zones, hours, per-order bonuses)."""
-
     private const val FIX_SYSTEM = """You debug Shiftlit, an Android app that reads gig-driver offer cards from the accessibility tree. A screen did not score as an offer, or scored wrongly. You are given the captured nodes in tree order, each with a stable index, and the parser's decision trail.
 
 Answer with exactly one JSON object and nothing else - no prose, no code fence:
@@ -161,36 +108,6 @@ Rules:
   whether the miss repeats or the layout changed between reads.
 - The note is shown to the driver: say what stopped the parse and why you
   picked these nodes, in plain words. No jargon."""
-
-    /** The prompt sent with the pasted email; kept pure so it can be tested. */
-    fun userPrompt(email: String, currency: String, unit: String, current: String): String =
-        "Driver's currency: " + currency + "\n" +
-            "Distance unit: " + unit + "\n" +
-            "Current rules: " + current + "\n" +
-            "Email:\n\"\"\"\n" +
-            email.take(MAX_EMAIL_CHARS) +
-            "\n\"\"\"\n"
-
-    /**
-     * Reads the rule values out of a model reply. Models wrap JSON in prose or
-     * fences often enough that strict parsing would reject a usable answer, so
-     * this pulls the named fields and ignores everything around them.
-     */
-    fun parseProposal(reply: String): Proposal? {
-        if (!reply.contains('{')) return null
-        val p = Proposal(
-            minPerMileCents = cents(reply, "min_per_mile")?.coerceIn(1, 1_000_000),
-            minPerHourCents = cents(reply, "min_per_hour")?.coerceIn(1, 10_000_000),
-            minPayoutCents = cents(reply, "min_payout")?.coerceIn(0, 10_000_000),
-            maxDistance = number(reply, "max_distance")?.takeIf { it > 0 }
-                ?.coerceIn(0.5, 1000.0),
-            unit = string(reply, "unit")?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
-            currencyCode = string(reply, "currency")?.trim()?.uppercase()
-                ?.takeIf { it.matches(Regex("[A-Z]{3}")) },
-            note = string(reply, "note")?.trim()?.takeIf { it.isNotEmpty() },
-        )
-        return if (p.hasRules || p.note != null) p else null
-    }
 
     /** A prompt and how many nodes it actually lists, so reply indices can be
      *  range-checked against what the model was shown. */
@@ -390,30 +307,6 @@ Rules:
         }
     }
 
-    /**
-     * Runs one request. Call from a background thread; the callback runs on the
-     * calling thread. Never logs the key, and never puts it in the URL.
-     */
-    fun ask(
-        provider: AiProvider,
-        apiKey: String,
-        model: String,
-        baseUrl: String,
-        email: String,
-        currency: String,
-        unit: String,
-        current: String,
-    ): Result = when (val r = send(
-        provider, apiKey, model, baseUrl, SYSTEM,
-        userPrompt(email, currency, unit, current), 600,
-    )) {
-        is Reply.Err -> Result.Err(r.message)
-        // A model that ignored the JSON request still said something useful;
-        // show it as a note instead of an error.
-        is Reply.Ok ->
-            Result.Ok(parseProposal(r.content) ?: Proposal(note = r.content.take(600)))
-    }
-
     private sealed class Reply {
         data class Ok(val content: String) : Reply()
         data class Err(val message: String) : Reply()
@@ -530,16 +423,6 @@ Rules:
             open?.disconnect()
         }
     }
-
-    private fun number(reply: String, key: String): Double? {
-        val m = Regex("\"" + key + "\"\\s*:\\s*\"?(-?\\d+(?:\\.\\d+)?)\"?").find(reply)
-            ?: return null
-        val v = m.groupValues[1].toDoubleOrNull() ?: return null
-        return if (v.isFinite()) v else null
-    }
-
-    private fun cents(reply: String, key: String): Int? =
-        number(reply, key)?.takeIf { it > 0 }?.let { Math.round(it * 100).toInt() }
 
     private fun string(reply: String, key: String): String? {
         val m = Regex("\"" + key + "\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"").find(reply)

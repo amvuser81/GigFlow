@@ -57,13 +57,12 @@ Everything runs on-device. No account required, no subscription, no tracking.
 - **Diagnostics** — see exactly what the assistant last read inside each
   driver app, so parse misses are debuggable instead of silent
 - **Optional AI setup** — bring your own API key for OpenAI, Anthropic, Google
-  Gemini, OpenRouter or any OpenAI-compatible endpoint. Paste an email for
-  rule values, or hand it a screen the parser missed plus that app's recent
-  reads: it explains the miss and points at the payout, distance, duration and
-  accept/decline nodes. Either
-  proposal is reviewed before it is applied, and a screen mapping is
-  test-parsed on that capture first. The request goes from your phone straight
-  to the provider you chose; there is no Shiftlit server in between
+  Gemini, OpenRouter or any OpenAI-compatible endpoint, from Diagnostics. Hand
+  it a screen the parser missed plus that app's recent reads: it explains the
+  miss and points at the payout, distance, duration and accept/decline nodes.
+  The mapping is reviewed and test-parsed on that capture before it is saved.
+  The request goes from your phone straight to the provider you chose; there
+  is no Shiftlit server in between
 - **Audit trail** — every skipped offer carries the rule that failed and both
   numbers it compared (`payout $6.10 < $8.00 floor`), in the offer log, the
   read history and the overlay, so a bad parse is never silently a skip
@@ -85,18 +84,17 @@ Setup takes under a minute — the app walks you through it in the Assist tab:
 2. **Allow location** (for automatic mileage tracking)
 3. **Allow notifications** (the shift tracker runs as a foreground service)
 
-Optionally, open **Assist → AI setup** and add your own API key (OpenAI,
-Anthropic, Google Gemini, OpenRouter or a custom OpenAI-compatible endpoint).
-Then paste an email — a rate card, a welcome mail, your own notes — and the
-provider proposes rule values you can review and apply. The request goes from
-your phone to that provider and nowhere else; nothing is sent until you tap
-Ask, and every other feature works without a key.
+Optionally, open **Assist → Diagnostics → tap the app → AI setup** and add your
+own API key (OpenAI, Anthropic, Google Gemini, OpenRouter or a custom
+OpenAI-compatible endpoint). The request goes from your phone to that provider
+and nowhere else; nothing is sent until you tap Ask, and every other feature
+works without a key.
 
-If a card isn't being read, **Assist → Diagnostics → the app → Ask … to fix
-this screen** does the same for one capture and the app's recent reads: the
-provider says what stopped the parse (and whether it keeps missing the same
-card), points at the payout, distance, duration and accept/decline nodes, and
-the mapping is tested on that capture before you can save it.
+If a card isn't being read, the same sheet offers **Ask … to fix this screen**:
+the provider gets that one capture and the app's recent reads, says what
+stopped the parse (and whether it keeps missing the same card), points at the
+payout, distance, duration and accept/decline nodes, and the mapping is tested
+on that capture before you can save it.
 
 Then open a driver app and watch the verdict card appear on offers.
 Automation is off by default — enable it in **Assist → Automation** when
@@ -219,8 +217,8 @@ docs/              legal docs (privacy, terms, cookies)
 
 ## Privacy
 
-Screen content and your GPS trail never leave the phone unless you paste
-something into AI setup yourself, and the only network traffic is the
+Screen content and your GPS trail never leave the phone unless you send a
+screen to AI setup yourself, and the only network traffic is the
 anonymous GitHub update check
 plus — only if you add a key — the AI provider you chose. Automation is
 opt-in and cancellable. Full details:
