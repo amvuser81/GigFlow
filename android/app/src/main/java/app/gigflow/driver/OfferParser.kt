@@ -243,7 +243,7 @@ object OfferParser {
         val moneyNodes = nodes.mapNotNull { n ->
             moneyOf(n.text, extra, extraSymbol)?.let { (amount, cur) -> Money(n, amount, cur, n.text) }
         }
-        if (moneyNodes.isEmpty() && hint?.payout == null) {
+        if (moneyNodes.isEmpty() && hint?.payout == null && hint?.payoutText == null) {
             trace?.add("money=0 → not an offer")
             return null
         }
@@ -253,10 +253,10 @@ object OfferParser {
         val taughtPayout = hint?.payout?.let { a -> ParseHints.resolve(nodes, a) }
         val taughtMoney = taughtPayout?.let { n ->
             moneyOf(n.text, extra, extraSymbol) ?: lenientMoney(n.text, extraSymbol)
-        }
+        } ?: hint?.payoutText?.let { frag -> bestMoneyByText(nodes, frag, extra, extraSymbol) }
         // A taught payout that can't be read means the hint is stale (the app
         // renamed the node). Don't guess with the next money figure on screen.
-        if (hint?.payout != null && taughtMoney == null) {
+        if ((hint?.payout != null || hint?.payoutText != null) && taughtMoney == null) {
             trace?.add("hint: taught payout unreadable → not an offer")
             return null
         }
@@ -267,8 +267,12 @@ object OfferParser {
         val payoutMoney = moneyNodes.firstOrNull { it.amount == payout }
         val currency = taughtMoney?.second ?: (payoutMoney?.currency ?: "$")
         trace?.add(
-            if (taughtMoney != null) "taught payout=$payout from ${taughtPayout?.text}"
-            else "money=${moneyNodes.size} payout=$payout from ${payoutMoney?.raw ?: "?"}",
+            when {
+                taughtMoney != null && taughtPayout != null ->
+                    "taught payout=$payout from ${taughtPayout.text}"
+                taughtMoney != null -> "taught payout=$payout (text match)"
+                else -> "money=${moneyNodes.size} payout=$payout from ${payoutMoney?.raw ?: "?"}"
+            },
         )
 
         val tip = moneyNodes
@@ -278,12 +282,22 @@ object OfferParser {
         // Distances: take the largest plausible one (total trip distance).
         val distanceKm = hint?.distance?.let { a -> ParseHints.resolve(nodes, a) }
             ?.let { lenientDistance(it.text) }?.takeIf { it in 0.2..500.0 }
+            ?: hint?.distanceText?.takeIf { it.isNotBlank() }?.let { frag ->
+                nodes.filter { it.text.contains(frag, ignoreCase = true) }
+                    .mapNotNull { lenientDistance(it.text) }
+                    .filter { it in 0.2..500.0 }.maxOrNull()
+            }
             ?: texts.mapNotNull { distanceOf(it) }
                 .filter { it in 0.2..500.0 }.maxOrNull()
 
         // Duration: ignore countdown timers (tiny ints, "seconds").
         val durationMin = hint?.duration?.let { a -> ParseHints.resolve(nodes, a) }
             ?.let { lenientDuration(it.text) }?.takeIf { it in 1.0..600.0 }
+            ?: hint?.durationText?.takeIf { it.isNotBlank() }?.let { frag ->
+                nodes.filter { it.text.contains(frag, ignoreCase = true) }
+                    .mapNotNull { lenientDuration(it.text) }
+                    .filter { it in 1.0..600.0 }.maxOrNull()
+            }
             ?: texts.mapNotNull { durationOf(it) }
                 .filter { it in 1.0..600.0 }.maxOrNull()
 
@@ -417,6 +431,18 @@ object OfferParser {
 
     private fun lenientDistance(text: String): Double? =
         distanceOf(text) ?: lenientNumber(text) // bare number on a distance row = km
+
+    /** Largest readable amount among the nodes whose text contains [frag] — the
+     *  text-teaching equivalent of "the biggest number on the card". */
+    private fun bestMoneyByText(
+        nodes: List<FlatNode>,
+        frag: String,
+        extra: Regex?,
+        extraSymbol: String,
+    ): Pair<Double, String>? = nodes
+        .filter { it.text.contains(frag, ignoreCase = true) }
+        .mapNotNull { moneyOf(it.text, extra, extraSymbol) ?: lenientMoney(it.text, extraSymbol) }
+        .maxByOrNull { it.first }
 
     private fun lenientDuration(text: String): Double? {
         durationOf(text)?.let { return it }

@@ -234,9 +234,10 @@ class AssistScreen(
                 }
             })
         }
-        // Mail the full dump to the maintainer: every node with its view id,
-        // bounds and clickability, the parser's decision trail, and the same
-        // data as JSON so a tool (or an AI) can parse it.
+        // Only for a screen that didn't parse: a report costs the maintainer
+        // time, and a scored screen has nothing to report. Nothing is ever sent
+        // on its own — the button only opens a mail the user must send.
+        if (snap.outcome == "miss") {
         col.addView(TextView(ctx).apply {
             text = "Email this report"
             textSize = Ios.T_BODY; setTypeface(typeface, Typeface.BOLD)
@@ -265,11 +266,12 @@ class AssistScreen(
         })
         col.addView(TextView(ctx).apply {
             text = "Addressed to $DIAG_EMAIL — readable dump in the body, the raw " +
-                "JSON with every node rides along as an attachment."
+                "JSON with every node attached. Nothing is sent until you press send."
             textSize = Ios.T_CAPTION; setTextColor(p.label3)
             gravity = android.view.Gravity.CENTER
             setPadding(0, 0, 0, dp(ctx, 8f))
         })
+        }
         sheet.add(col).show()
     }
 
@@ -434,6 +436,21 @@ class AssistScreen(
 
         val roles = listOf("Payout", "Distance", "Duration")
         val picks = mutableMapOf<String, String?>(roles[0] to null, roles[1] to null, roles[2] to null)
+        // Fallback teaching: match the line by its text instead of by node, for
+        // screens whose ids are missing or shared across rows. Kept outside
+        // render() so typing survives every redraw.
+        val typedFields = LinkedHashMap<String, android.widget.EditText>()
+        roles.forEach { role ->
+            typedFields[role] = android.widget.EditText(ctx).apply {
+                hint = "$role line contains… (optional)"
+                textSize = Ios.T_SUBHEAD
+                setTextColor(p.label)
+                setHintTextColor(p.label3)
+                setPadding(0, dp(ctx, 2f), 0, dp(ctx, 2f))
+            }
+        }
+        fun typed(role: String): String? =
+            typedFields[role]?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }
         var active = 0
         var result: String? = null
         var resultOk = false
@@ -446,13 +463,18 @@ class AssistScreen(
         sheet.add(col)
 
         fun hintFor(): ParseHints.Hint? {
-            val payout = picks["Payout"] ?: return null
+            val payout = picks["Payout"]
+            val payoutText = typed("Payout")
+            if (payout == null && payoutText == null) return null
             return ParseHints.Hint(
                 pkg = pkg,
                 screen = screen,
                 payout = payout,
                 distance = picks["Distance"],
                 duration = picks["Duration"],
+                payoutText = payoutText,
+                distanceText = typed("Distance"),
+                durationText = typed("Duration"),
             )
         }
 
@@ -523,6 +545,14 @@ class AssistScreen(
                     }
                 })
             }
+
+            col.addView(line("…or match by text", Ios.T_SUBHEAD, p.label, 16f, bold = true))
+            col.addView(line(
+                "A fragment of the line itself — \"Ft\", \"km\", \"perc\". Use this when " +
+                    "a screen reuses one view id for many rows, or exposes none at all.",
+                Ios.T_CAPTION, p.label3, 2f,
+            ))
+            roles.forEach { role -> typedFields[role]?.let { col.addView(it) } }
 
             col.addView(TextView(ctx).apply {
                 text = "Test this mapping"

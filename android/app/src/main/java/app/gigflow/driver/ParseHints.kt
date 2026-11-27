@@ -29,29 +29,41 @@ object ParseHints {
         val duration: String? = null,
         val accept: String? = null,
         val decline: String? = null,
+        /** Fallback teaching: a fragment of the line's own text, for screens
+         *  whose ids are missing or shared by many rows. */
+        val payoutText: String? = null,
+        val distanceText: String? = null,
+        val durationText: String? = null,
         val taughtAt: Long = System.currentTimeMillis(),
     )
 
     /**
-     * Node anchor: the view id when the app exposes one (stable across
-     * amounts), otherwise the node's index in the flattened list.
+     * Node anchor. Apps routinely give one view id to many nodes — every row of
+     * a list, a container and its label — so the id alone matches all of them
+     * (teaching one row appeared to select ten). The occurrence index makes the
+     * anchor point at exactly one node.
      */
     fun anchor(nodes: List<OfferParser.FlatNode>, index: Int): String? {
         val n = nodes.getOrNull(index) ?: return null
-        return n.viewId?.let { "id:$it" } ?: "idx:$index"
+        val id = n.viewId ?: return "idx:$index"
+        val occurrence = nodes.take(index).count { it.viewId == id }
+        return "id:$id@$occurrence"
     }
 
     fun resolve(nodes: List<OfferParser.FlatNode>, anchor: String?): OfferParser.FlatNode? {
         if (anchor.isNullOrEmpty()) return null
-        return when {
-            anchor.startsWith("id:") -> {
-                val id = anchor.substring(3)
-                nodes.firstOrNull { it.viewId == id }
-            }
-            anchor.startsWith("idx:") ->
-                nodes.getOrNull(anchor.substring(4).toIntOrNull() ?: return null)
-            else -> null
+        if (anchor.startsWith("idx:")) {
+            return nodes.getOrNull(anchor.substring(4).toIntOrNull() ?: return null)
         }
+        if (!anchor.startsWith("id:")) return null
+        val body = anchor.substring(3)
+        val at = body.lastIndexOf('@')
+        // Hints saved before the occurrence was part of the anchor keep working
+        // as "the first node with that id".
+        if (at < 0) return nodes.firstOrNull { it.viewId == body }
+        val matches = nodes.filter { it.viewId == body.substring(0, at) }
+        val n = body.substring(at + 1).toIntOrNull() ?: return matches.firstOrNull()
+        return matches.getOrNull(n)
     }
 
     private val DIGITS = Regex("""\d+(?:[.,]\d+)?""")
@@ -94,6 +106,9 @@ object ParseHints {
                                 duration = o.optString("duration").ifBlank { null },
                                 accept = o.optString("accept").ifBlank { null },
                                 decline = o.optString("decline").ifBlank { null },
+                                payoutText = o.optString("payoutText").ifBlank { null },
+                                distanceText = o.optString("distanceText").ifBlank { null },
+                                durationText = o.optString("durationText").ifBlank { null },
                                 taughtAt = o.optLong("taughtAt"),
                             ),
                         )
@@ -122,6 +137,9 @@ object ParseHints {
                         .put("duration", h.duration ?: "")
                         .put("accept", h.accept ?: "")
                         .put("decline", h.decline ?: "")
+                        .put("payoutText", h.payoutText ?: "")
+                        .put("distanceText", h.distanceText ?: "")
+                        .put("durationText", h.durationText ?: "")
                         .put("taughtAt", h.taughtAt),
                 )
             }

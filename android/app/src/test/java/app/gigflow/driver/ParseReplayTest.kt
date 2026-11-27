@@ -113,6 +113,53 @@ class ParseReplayTest {
     }
 
     @Test
+    fun anchorsStayUniqueWhenOneIdCoversManyRows() {
+        fun row(t: String) = OfferParser.FlatNode(t, "app:id/row", Bounds(0, 0, 400, 48), false)
+        val nodes = listOf(row("A"), row("B"), row("C"))
+        val first = ParseHints.anchor(nodes, 0)!!
+        val third = ParseHints.anchor(nodes, 2)!!
+        assertNotEquals("one id must not give every row the same anchor", first, third)
+        assertEquals("A", ParseHints.resolve(nodes, first)?.text)
+        assertEquals("C", ParseHints.resolve(nodes, third)?.text)
+    }
+
+    @Test
+    fun textTeachingRescuesAScreenWithoutUsableIds() {
+        val f = ReplayFixtures.bareNumbers
+        assertNull(OfferParser.parse(f.pkg, f.nodes))
+        val hint = ParseHints.Hint(
+            pkg = f.pkg,
+            screen = ParseHints.screenKey(f.nodes),
+            payoutText = "Ft",
+            distanceText = "12",
+            durationText = "22",
+        )
+        val offer = OfferParser.parse(f.pkg, f.nodes, hint = hint)
+        assertNotNull("matching by text should read this screen", offer)
+        val o = offer!!
+        assertEquals(185_000, o.payoutCents)
+        assertEquals(12.4, o.distanceKm!!, 0.001)
+        assertEquals(22.0, o.durationMin!!, 0.001)
+    }
+
+    @Test
+    fun textHintCannotChangeAScreenThatParses() {
+        val f = ReplayFixtures.woltHu
+        val base = OfferParser.parse(f.pkg, f.nodes)!!
+        val hint = ParseHints.Hint(
+            pkg = f.pkg,
+            screen = ParseHints.screenKey(f.nodes),
+            payoutText = "Új fuvar",
+            distanceText = "Elfogadás",
+            durationText = "x",
+        )
+        val got = OfferParser.parse(f.pkg, f.nodes, hint = hint)!!
+        assertEquals(base.payoutCents, got.payoutCents)
+        assertEquals(base.distanceKm!!, got.distanceKm!!, 0.001)
+        assertEquals(base.durationMin!!, got.durationMin!!, 0.001)
+    }
+
+    @Test
     fun bogusHintCannotFabricateAnOffer() {
         val f = ReplayFixtures.bareNumbers
         // The title node holds no amount, so a hint pointing at it is useless —
