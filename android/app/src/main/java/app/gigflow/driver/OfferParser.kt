@@ -193,7 +193,9 @@ object OfferParser {
                 n.getChild(i)?.let(stack::add)
             }
             n.recycle()
-            if (label.isNotEmpty()) {
+            // Unlabeled clickable nodes are kept: an offer's close "×" often has
+            // no text, no id and no description, and teaching it needs it listed.
+            if (label.isNotEmpty() || clickable) {
                 out.add(FlatNode(label, viewId, Bounds(r.left, r.top, r.right, r.bottom), clickable))
             }
         }
@@ -218,8 +220,24 @@ object OfferParser {
         // neither change nor break a result that works today.
         val auto = parseOnce(pkg, nodes, extra, extraSymbol, currencyCode, trace, null)
         if (auto != null) {
-            if (hint != null) trace?.add("hint: ignored (screen already parses)")
-            return auto
+            // The amounts are settled: the heuristics own them, and no taught
+            // mapping may change a price. Taught *buttons* still apply — a card
+            // can read perfectly while its accept/decline control is an
+            // unlabeled icon the label search never finds.
+            val accept = hint?.accept?.let { ParseHints.resolve(nodes, it) }?.ref()
+            val decline = hint?.decline?.let { ParseHints.resolve(nodes, it) }?.ref()
+            if (accept == null && decline == null) {
+                if (hint != null) trace?.add("hint: ignored (screen already parses)")
+                return auto
+            }
+            trace?.add(
+                "hint: taught buttons accept=${accept?.label ?: "none"} " +
+                    "decline=${decline?.label ?: "none"}",
+            )
+            return auto.copy(
+                acceptNode = accept ?: auto.acceptNode,
+                declineNode = decline ?: auto.declineNode,
+            )
         }
         if (hint == null) return null
         trace?.add("hint: heuristics missed, trying taught nodes")
@@ -228,6 +246,8 @@ object OfferParser {
                 "payout".takeIf { ParseHints.isLegacy(h.payout) },
                 "distance".takeIf { ParseHints.isLegacy(h.distance) },
                 "duration".takeIf { ParseHints.isLegacy(h.duration) },
+                "accept".takeIf { ParseHints.isLegacy(h.accept) },
+                "decline".takeIf { ParseHints.isLegacy(h.decline) },
             )
         }.orEmpty()
         if (legacyRoles.isNotEmpty()) {
@@ -253,7 +273,7 @@ object OfferParser {
         val moneyNodes = nodes.mapNotNull { n ->
             moneyOf(n.text, extra, extraSymbol)?.let { (amount, cur) -> Money(n, amount, cur, n.text) }
         }
-        if (moneyNodes.isEmpty() && hint?.payout == null && hint?.payoutText == null) {
+        if (moneyNodes.isEmpty() && hint?.payout == null) {
             trace?.add("money=0 → not an offer")
             return null
         }
@@ -263,11 +283,11 @@ object OfferParser {
         val taughtPayout = hint?.payout?.let { a -> ParseHints.resolve(nodes, a) }
         val taughtMoney = taughtPayout?.let { n ->
             moneyOf(n.text, extra, extraSymbol) ?: lenientMoney(n.text, extraSymbol)
-        } ?: hint?.payoutText?.let { frag -> bestMoneyByText(nodes, frag, extra, extraSymbol) }
+        }
         // A taught payout that can't be read means the hint is stale (the app
         // renamed the node). Don't guess with the next money figure on screen.
         val hintPayout = hint?.payout
-        if ((hintPayout != null || hint?.payoutText != null) && taughtMoney == null) {
+        if (hintPayout != null && taughtMoney == null) {
             trace?.add(
                 when {
                     ParseHints.isLegacy(hintPayout) ->
@@ -289,7 +309,6 @@ object OfferParser {
             when {
                 taughtMoney != null && taughtPayout != null ->
                     "taught payout=$payout from ${taughtPayout.text}"
-                taughtMoney != null -> "taught payout=$payout (text match)"
                 else -> "money=${moneyNodes.size} payout=$payout from ${payoutMoney?.raw ?: "?"}"
             },
         )
@@ -301,22 +320,12 @@ object OfferParser {
         // Distances: take the largest plausible one (total trip distance).
         val distanceKm = hint?.distance?.let { a -> ParseHints.resolve(nodes, a) }
             ?.let { lenientDistance(it.text) }?.takeIf { it in 0.2..500.0 }
-            ?: hint?.distanceText?.takeIf { it.isNotBlank() }?.let { frag ->
-                nodes.filter { it.text.contains(frag, ignoreCase = true) }
-                    .mapNotNull { lenientDistance(it.text) }
-                    .filter { it in 0.2..500.0 }.maxOrNull()
-            }
             ?: texts.mapNotNull { distanceOf(it) }
                 .filter { it in 0.2..500.0 }.maxOrNull()
 
         // Duration: ignore countdown timers (tiny ints, "seconds").
         val durationMin = hint?.duration?.let { a -> ParseHints.resolve(nodes, a) }
             ?.let { lenientDuration(it.text) }?.takeIf { it in 1.0..600.0 }
-            ?: hint?.durationText?.takeIf { it.isNotBlank() }?.let { frag ->
-                nodes.filter { it.text.contains(frag, ignoreCase = true) }
-                    .mapNotNull { lenientDuration(it.text) }
-                    .filter { it in 1.0..600.0 }.maxOrNull()
-            }
             ?: texts.mapNotNull { durationOf(it) }
                 .filter { it in 1.0..600.0 }.maxOrNull()
 
@@ -450,18 +459,6 @@ object OfferParser {
 
     private fun lenientDistance(text: String): Double? =
         distanceOf(text) ?: lenientNumber(text) // bare number on a distance row = km
-
-    /** Largest readable amount among the nodes whose text contains [frag] — the
-     *  text-teaching equivalent of "the biggest number on the card". */
-    private fun bestMoneyByText(
-        nodes: List<FlatNode>,
-        frag: String,
-        extra: Regex?,
-        extraSymbol: String,
-    ): Pair<Double, String>? = nodes
-        .filter { it.text.contains(frag, ignoreCase = true) }
-        .mapNotNull { moneyOf(it.text, extra, extraSymbol) ?: lenientMoney(it.text, extraSymbol) }
-        .maxByOrNull { it.first }
 
     private fun lenientDuration(text: String): Double? {
         durationOf(text)?.let { return it }

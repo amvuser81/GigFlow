@@ -23,7 +23,7 @@ object Diagnostics {
     private const val LEGACY_KEY = "snaps"
     private const val MAX_TEXTS = 60
     /** Scored screens keep the card-sized window: the report rarely needs more. */
-    private const val MAX_NODES = 80
+    private const val MAX_NODES = 200
 
     /** A miss is what gets reported and taught, and it is written at most a few
      *  times per screen (once per re-read), so keeping far more of the tree is
@@ -47,8 +47,8 @@ object Diagnostics {
         val outcome: String, // "offer" | "miss" | "idle"
         val texts: List<String>,
         val nodes: List<Node> = emptyList(),
-        /** Nodes on the screen before [MAX_NODES] truncation — the report says
-         *  "80 of 143 captured" rather than implying that was all of it. */
+        /** Nodes on the screen before truncation — the report says
+         *  "200 of 431 captured" rather than implying that was all of it. */
         val nodeCount: Int = 0,
         /** [ParseHints.screenKey] of the full node list at capture time — the
          *  teach flow keys a hint on this. Empty for old/text-only snapshots. */
@@ -101,7 +101,9 @@ object Diagnostics {
         ctx,
         pkg,
         outcome,
-        nodes.map { it.text },
+        // Unlabeled clickable nodes are part of the teaching list but read as
+        // blank lines in the snapshot text.
+        nodes.map { it.text }.filter { it.isNotBlank() },
         // Keyed from the full list: the cap below could drop the ids a
         // signature computed later from the snapshot would rely on.
         screen = ParseHints.screenKey(nodes),

@@ -170,6 +170,8 @@ class AssistScreen(
             val stale = snap?.let { staleMapping(pkg, it) }
             val (label, tint) = when {
                 snap == null -> "Not seen yet" to p.label3
+                snap.outcome == "offer" && stale != null ->
+                    "Offer scored · saved mapping out of date" to p.orange
                 snap.outcome == "offer" -> "Offer scored · ${ago(snap.at)}" to p.green
                 snap.outcome == "miss" && stale != null ->
                     "Screen missed · saved mapping out of date" to p.orange
@@ -229,8 +231,12 @@ class AssistScreen(
         val stale = appPkg?.let { staleMapping(it, snap) }
         if (stale != null) {
             col.addView(TextView(ctx).apply {
-                text = "Your saved mapping is out of date: $stale. GigFlow won't guess a " +
-                    "row for it, so the screen misses — tap here to teach it again."
+                text = if (snap.outcome == "miss")
+                    "Your saved mapping is out of date: $stale. GigFlow won't guess a row " +
+                        "for it, so the screen misses — tap here to teach it again."
+                else
+                    "Your saved mapping is out of date: $stale. A taught button can't " +
+                        "fire until it's re-taught — tap here."
                 textSize = Ios.T_FOOTNOTE; setTextColor(p.orange)
                 setPadding(0, dp(ctx, 10f), 0, 0)
                 setOnClickListener {
@@ -242,7 +248,7 @@ class AssistScreen(
         // Only meaningful on a miss: the parser never consults a hint when its
         // own heuristics produce an offer, so teaching a working screen would
         // be a no-op the user can't see the result of.
-        if (snap.outcome == "miss" && snap.nodes.isNotEmpty()) {
+        if (snap.nodes.isNotEmpty()) {
             col.addView(TextView(ctx).apply {
                 text = if (stale != null) "Re-teach this screen" else "Teach this screen"
                 textSize = Ios.T_BODY; setTypeface(typeface, Typeface.BOLD)
@@ -252,6 +258,15 @@ class AssistScreen(
                     sheet.dismiss()
                     teachSheet(name, snap)
                 }
+            })
+            col.addView(TextView(ctx).apply {
+                text = if (snap.outcome == "offer")
+                    "These amounts are already read. Teaching is for the accept/decline buttons."
+                else
+                    "Amounts apply only where the parser can't read a screen; buttons apply always."
+                textSize = Ios.T_CAPTION; setTextColor(p.label3)
+                gravity = android.view.Gravity.CENTER
+                setPadding(0, 0, 0, dp(ctx, 6f))
             })
         }
         // Only for a screen that didn't parse: a report costs the maintainer
@@ -449,7 +464,7 @@ class AssistScreen(
 
     /** Why the mapping saved for this snapshot no longer fits, or null. */
     private fun staleMapping(pkg: String, snap: Diagnostics.Snap): String? {
-        if (snap.outcome != "miss" || snap.nodes.isEmpty()) return null
+        if (snap.nodes.isEmpty()) return null
         val flat = flatOf(snap)
         val saved = ParseHints.forKey(ctx, pkg, snap.screen)
             ?: ParseHints.forScreen(ctx, pkg, flat)
@@ -466,23 +481,8 @@ class AssistScreen(
         val curSymbol = settings.currencySymbol
         val extraRe = OfferParser.extraMoney(settings.currencyCode, curSymbol)
 
-        val roles = listOf("Payout", "Distance", "Duration")
-        val picks = mutableMapOf<String, String?>(roles[0] to null, roles[1] to null, roles[2] to null)
-        // Fallback teaching: match the line by its text instead of by node, for
-        // screens whose ids are missing or shared across rows. Kept outside
-        // render() so typing survives every redraw.
-        val typedFields = LinkedHashMap<String, android.widget.EditText>()
-        roles.forEach { role ->
-            typedFields[role] = android.widget.EditText(ctx).apply {
-                hint = "$role line contains… (optional)"
-                textSize = Ios.T_SUBHEAD
-                setTextColor(p.label)
-                setHintTextColor(p.label3)
-                setPadding(0, dp(ctx, 2f), 0, dp(ctx, 2f))
-            }
-        }
-        fun typed(role: String): String? =
-            typedFields[role]?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+        val roles = listOf("Payout", "Distance", "Duration", "Accept", "Decline")
+        val picks = roles.associateWith<String, String?> { null }.toMutableMap()
         var active = 0
         var result: String? = null
         var resultOk = false
@@ -496,17 +496,19 @@ class AssistScreen(
 
         fun hintFor(): ParseHints.Hint? {
             val payout = picks["Payout"]
-            val payoutText = typed("Payout")
-            if (payout == null && payoutText == null) return null
+            val accept = picks["Accept"]
+            val decline = picks["Decline"]
+            // Amounts alone identify a screen only if there is a payout to read;
+            // buttons are worth teaching on their own.
+            if (payout == null && accept == null && decline == null) return null
             return ParseHints.Hint(
                 pkg = pkg,
                 screen = screen,
                 payout = payout,
                 distance = picks["Distance"],
                 duration = picks["Duration"],
-                payoutText = payoutText,
-                distanceText = typed("Distance"),
-                durationText = typed("Duration"),
+                accept = accept,
+                decline = decline,
             )
         }
 
@@ -515,10 +517,12 @@ class AssistScreen(
                 pkg, flat, extraRe, curSymbol, settings.currencyCode, null, h,
             )
                 ?: return false to "Still no offer — tap a different node."
-            val parts = ArrayList<String>(3)
+            val parts = ArrayList<String>(5)
             parts.add(Currencies.format(offer.payoutCents, offer.currencySymbol, offer.currencyCode))
             offer.distanceKm?.let { parts.add("%.1f km".format(it)) }
             offer.durationMin?.let { parts.add("%.0f min".format(it)) }
+            if (offer.acceptNode != null) parts.add("accept ✓")
+            if (offer.declineNode != null) parts.add("decline ✓")
             return true to "Reads as ${parts.joinToString(" · ")}"
         }
 
@@ -535,9 +539,10 @@ class AssistScreen(
             col.removeAllViews()
             col.addView(line("Teach this screen", Ios.T_HEADLINE, p.label, 0f, bold = true))
             col.addView(line(
-                "Tap the node holding the payout, then the distance and duration if " +
-                    "they're shown. GigFlow only uses this where the normal parser finds " +
-                    "nothing, so screens it already reads stay untouched.",
+                "Tap the payout, distance and duration when the normal parser misses them — " +
+                    "taught amounts are only used where the heuristics find nothing. Accept " +
+                    "and Decline apply even on a screen that already reads fine, which is how " +
+                    "an unlabeled \"×\" button gets taught.",
                 Ios.T_FOOTNOTE, p.label2, 6f,
             ))
             val savedHere = ParseHints.forKey(ctx, pkg, screen)
@@ -549,21 +554,26 @@ class AssistScreen(
                 ))
             }
 
-            val chips = LinearLayout(ctx).apply {
-                orientation = LinearLayout.HORIZONTAL
+            val chipRows = LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
                 setPadding(0, dp(ctx, 10f), 0, dp(ctx, 4f))
             }
-            roles.forEachIndexed { i, role ->
-                chips.addView(TextView(ctx).apply {
-                    text = if (picks[role] != null) "$role ✓" else role
-                    textSize = Ios.T_SUBHEAD
-                    setTextColor(if (i == active) p.tint else p.label2)
-                    if (i == active) setTypeface(typeface, Typeface.BOLD)
-                    setPadding(0, dp(ctx, 4f), dp(ctx, 16f), dp(ctx, 4f))
-                    setOnClickListener { active = i; render() }
-                })
+            roles.chunked(3).forEach { chunk ->
+                val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
+                chunk.forEach { role ->
+                    val i = roles.indexOf(role)
+                    row.addView(TextView(ctx).apply {
+                        text = if (picks[role] != null) "$role ✓" else role
+                        textSize = Ios.T_SUBHEAD
+                        setTextColor(if (i == active) p.tint else p.label2)
+                        if (i == active) setTypeface(typeface, Typeface.BOLD)
+                        setPadding(0, dp(ctx, 4f), dp(ctx, 16f), dp(ctx, 4f))
+                        setOnClickListener { active = i; render() }
+                    })
+                }
+                chipRows.addView(row)
             }
-            col.addView(chips)
+            col.addView(chipRows)
 
             flat.forEachIndexed { i, n ->
                 val anchor = ParseHints.anchor(flat, i)
@@ -571,7 +581,11 @@ class AssistScreen(
                 col.addView(TextView(ctx).apply {
                     text = buildString {
                         if (role != null) append("[$role] ")
-                        append(n.text.take(80))
+                        if (n.text.isEmpty()) {
+                            append(if (n.clickable) "(unnamed button)" else "(unnamed)")
+                        } else {
+                            append(n.text.take(80))
+                        }
                         n.viewId?.substringAfterLast('/')?.let { append("  ·  $it") }
                     }
                     textSize = Ios.T_FOOTNOTE
@@ -586,14 +600,6 @@ class AssistScreen(
                 })
             }
 
-            col.addView(line("…or match by text", Ios.T_SUBHEAD, p.label, 16f, bold = true))
-            col.addView(line(
-                "A fragment of the line itself — \"Ft\", \"km\", \"perc\". Use this when " +
-                    "a screen reuses one view id for many rows, or exposes none at all.",
-                Ios.T_CAPTION, p.label3, 2f,
-            ))
-            roles.forEach { role -> typedFields[role]?.let { col.addView(it) } }
-
             col.addView(TextView(ctx).apply {
                 text = "Test this mapping"
                 textSize = Ios.T_BODY; setTypeface(typeface, Typeface.BOLD)
@@ -603,7 +609,7 @@ class AssistScreen(
                     val h = hintFor()
                     if (h == null) {
                         resultOk = false
-                        result = "Pick the payout node first."
+                        result = "Pick a payout, or an accept/decline button."
                     } else {
                         val (ok, msg) = test(h)
                         resultOk = ok

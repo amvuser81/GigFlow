@@ -126,39 +126,42 @@ class ParseReplayTest {
     }
 
     @Test
-    fun textTeachingRescuesAScreenWithoutUsableIds() {
-        val f = ReplayFixtures.bareNumbers
-        assertNull(OfferParser.parse(f.pkg, f.nodes))
-        val hint = ParseHints.Hint(
-            pkg = f.pkg,
-            screen = ParseHints.screenKey(f.nodes),
-            payoutText = "Ft",
-            distanceText = "12",
-            durationText = "22",
+    fun taughtButtonsApplyEvenWhenTheAmountsParse() {
+        // An Uber-style card whose × is an unlabeled, id-less clickable node.
+        val x = OfferParser.FlatNode("", null, Bounds(1000, 20, 1080, 100), true)
+        val nodes = listOf(
+            OfferParser.FlatNode("1 850 $", "app:id/payout", Bounds(0, 100, 800, 200), false),
+            OfferParser.FlatNode("12,4 km", null, Bounds(0, 200, 800, 260), false),
+            OfferParser.FlatNode("22 perc", null, Bounds(0, 260, 800, 320), false),
+            x,
         )
-        val offer = OfferParser.parse(f.pkg, f.nodes, hint = hint)
-        assertNotNull("matching by text should read this screen", offer)
-        val o = offer!!
-        assertEquals(185_000, o.payoutCents)
-        assertEquals(12.4, o.distanceKm!!, 0.001)
-        assertEquals(22.0, o.durationMin!!, 0.001)
+        val pkg = "com.ubercab.driver"
+        val plain = OfferParser.parse(pkg, nodes)!!
+        assertEquals(185_000, plain.payoutCents)
+        assertNull("an unnamed × is invisible to the label search", plain.declineNode)
+
+        val hint = ParseHints.Hint(
+            pkg = pkg,
+            screen = ParseHints.screenKey(nodes),
+            decline = ParseHints.anchor(nodes, nodes.lastIndex),
+        )
+        val taught = OfferParser.parse(pkg, nodes, hint = hint)!!
+        assertNotNull("the taught × must reach the offer", taught.declineNode)
+        assertEquals("taught buttons never touch the price", 185_000, taught.payoutCents)
     }
 
     @Test
-    fun textHintCannotChangeAScreenThatParses() {
-        val f = ReplayFixtures.woltHu
-        val base = OfferParser.parse(f.pkg, f.nodes)!!
-        val hint = ParseHints.Hint(
-            pkg = f.pkg,
-            screen = ParseHints.screenKey(f.nodes),
-            payoutText = "Új fuvar",
-            distanceText = "Elfogadás",
-            durationText = "x",
+    fun unlabeledControlsAreTaughtByPosition() {
+        val accept = OfferParser.FlatNode("Accept", "app:id/accept", Bounds(0, 400, 400, 480), true)
+        val x = OfferParser.FlatNode("", null, Bounds(1000, 20, 1080, 100), true)
+        val nodes = listOf(accept, x)
+        val anchor = ParseHints.anchor(nodes, 1)!!
+        assertTrue("an unlabeled node has no id to anchor on: $anchor", anchor.startsWith("pos:"))
+        assertEquals(x.bounds, ParseHints.resolve(nodes, anchor)?.bounds)
+        assertNull(
+            "a control that moved is not the one that was taught",
+            ParseHints.resolve(nodes - x, anchor),
         )
-        val got = OfferParser.parse(f.pkg, f.nodes, hint = hint)!!
-        assertEquals(base.payoutCents, got.payoutCents)
-        assertEquals(base.distanceKm!!, got.distanceKm!!, 0.001)
-        assertEquals(base.durationMin!!, got.durationMin!!, 0.001)
     }
 
     @Test
@@ -288,9 +291,14 @@ class ParseReplayTest {
             "the payout it pointed at is gone from this screen",
             ParseHints.staleReason(gone, nodes),
         )
+        assertEquals(
+            "a legacy button anchor is just as stale",
+            "its accept was saved before rows could be told apart",
+            ParseHints.staleReason(gone.copy(payout = null, accept = "id:app:id/accept"), nodes),
+        )
         assertNull(
-            "text teaching has no node to lose",
-            ParseHints.staleReason(gone.copy(payout = null, payoutText = "Ft"), nodes),
+            "a mapping whose anchors all resolve is not stale",
+            ParseHints.staleReason(gone.copy(payout = "id:app:id/amount@0"), nodes),
         )
     }
 }

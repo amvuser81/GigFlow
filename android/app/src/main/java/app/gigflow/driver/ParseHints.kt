@@ -29,11 +29,6 @@ object ParseHints {
         val duration: String? = null,
         val accept: String? = null,
         val decline: String? = null,
-        /** Fallback teaching: a fragment of the line's own text, for screens
-         *  whose ids are missing or shared by many rows. */
-        val payoutText: String? = null,
-        val distanceText: String? = null,
-        val durationText: String? = null,
         val taughtAt: Long = System.currentTimeMillis(),
     )
 
@@ -45,15 +40,33 @@ object ParseHints {
      */
     fun anchor(nodes: List<OfferParser.FlatNode>, index: Int): String? {
         val n = nodes.getOrNull(index) ?: return null
-        val id = n.viewId ?: return "idx:$index"
-        val occurrence = nodes.take(index).count { it.viewId == id }
-        return "id:$id@$occurrence"
+        val b = n.bounds
+        val id = n.viewId
+        return when {
+            // An unlabeled control (the "×" on an offer, an icon button) has no
+            // text or id to point at; where it sits on screen is the only handle
+            // left, and a corner control keeps that from offer to offer.
+            n.text.isEmpty() -> "pos:${b.left},${b.top},${b.right},${b.bottom}"
+            id == null -> "idx:$index"
+            else -> {
+                val occurrence = nodes.take(index).count { it.viewId == id }
+                "id:$id@$occurrence"
+            }
+        }
     }
 
     fun resolve(nodes: List<OfferParser.FlatNode>, anchor: String?): OfferParser.FlatNode? {
         if (anchor.isNullOrEmpty()) return null
         if (anchor.startsWith("idx:")) {
             return nodes.getOrNull(anchor.substring(4).toIntOrNull() ?: return null)
+        }
+        if (anchor.startsWith("pos:")) {
+            val b = anchor.substring(4).split(',').map { it.toIntOrNull() ?: return null }
+            if (b.size != 4) return null
+            return nodes.firstOrNull {
+                it.bounds.left == b[0] && it.bounds.top == b[1] &&
+                    it.bounds.right == b[2] && it.bounds.bottom == b[3]
+            }
         }
         if (!anchor.startsWith("id:")) return null
         val body = anchor.substring(3)
@@ -93,6 +106,8 @@ object ParseHints {
             "payout" to hint.payout,
             "distance" to hint.distance,
             "duration" to hint.duration,
+            "accept" to hint.accept,
+            "decline" to hint.decline,
         )
         anchors.forEach { (role, a) ->
             if (a == null) return@forEach
@@ -134,9 +149,6 @@ object ParseHints {
                                 duration = o.optString("duration").ifBlank { null },
                                 accept = o.optString("accept").ifBlank { null },
                                 decline = o.optString("decline").ifBlank { null },
-                                payoutText = o.optString("payoutText").ifBlank { null },
-                                distanceText = o.optString("distanceText").ifBlank { null },
-                                durationText = o.optString("durationText").ifBlank { null },
                                 taughtAt = o.optLong("taughtAt"),
                             ),
                         )
@@ -165,9 +177,6 @@ object ParseHints {
                         .put("duration", h.duration ?: "")
                         .put("accept", h.accept ?: "")
                         .put("decline", h.decline ?: "")
-                        .put("payoutText", h.payoutText ?: "")
-                        .put("distanceText", h.distanceText ?: "")
-                        .put("durationText", h.durationText ?: "")
                         .put("taughtAt", h.taughtAt),
                 )
             }
