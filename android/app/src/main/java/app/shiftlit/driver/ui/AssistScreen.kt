@@ -289,6 +289,86 @@ class AssistScreen(
                 }
             })
         }
+        // A fresh capture is the only place an AI-picked accept/decline can be
+        // confirmed: the anchors have to resolve against nodes seen now, not the
+        // ones the model was shown.
+        val flatNow = flatOf(snap)
+        val savedHere = appPkg?.let { p ->
+            val key = snap.screen.ifBlank { ParseHints.screenKey(flatNow) }
+            ParseHints.forKey(ctx, p, key) ?: ParseHints.forScreen(ctx, p, flatNow)
+        }
+        if (savedHere != null && savedHere.isAi &&
+            (savedHere.accept != null || savedHere.decline != null)
+        ) {
+            if (!savedHere.buttonsConfirmed) {
+                fun nowLabel(a: String?): String {
+                    if (a == null) return "none"
+                    val n = ParseHints.resolve(flatNow, a) ?: return "missing"
+                    return n.text.ifBlank {
+                        "(unnamed at ${n.bounds.left},${n.bounds.top})"
+                    }.take(40)
+                }
+                col.addView(TextView(ctx).apply {
+                    text = "AI picked accept: ${nowLabel(savedHere.accept)} · " +
+                        "decline: ${nowLabel(savedHere.decline)}"
+                    textSize = Ios.T_CAPTION; setTextColor(p.label2)
+                    gravity = android.view.Gravity.CENTER
+                    setPadding(0, dp(ctx, 10f), 0, 0)
+                })
+                // Only a capture newer than the saved mapping proves the
+                // controls. The snapshot the fix sheet opened from is exactly
+                // the one the model saw, so it can never confirm itself.
+                val problem = ParseHints.confirmProblem(savedHere, flatNow, snap.at)
+                if (problem == null) {
+                    col.addView(TextView(ctx).apply {
+                        text = "Confirm the AI-picked accept/decline on this newer capture"
+                        textSize = Ios.T_BODY; setTypeface(typeface, Typeface.BOLD)
+                        setTextColor(p.orange); gravity = android.view.Gravity.CENTER
+                        setPadding(0, dp(ctx, 12f), 0, dp(ctx, 4f))
+                        setOnClickListener {
+                            if (ParseHints.confirmButtons(ctx, savedHere, flatNow, snap.at)) {
+                                Toast.makeText(
+                                    ctx,
+                                    "Controls confirmed — auto-accept can use them now",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                                sheet.dismiss()
+                                refresh()
+                            } else {
+                                Toast.makeText(
+                                    ctx,
+                                    "This capture can't confirm those controls — re-teach the screen",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                        }
+                    })
+                } else {
+                    col.addView(TextView(ctx).apply {
+                        text = problem
+                        textSize = Ios.T_FOOTNOTE; setTextColor(p.orange)
+                        gravity = android.view.Gravity.CENTER
+                        setPadding(0, dp(ctx, 12f), 0, dp(ctx, 4f))
+                    })
+                }
+                col.addView(TextView(ctx).apply {
+                    text = "Until you confirm them, the mapping reads offers but will never " +
+                        "auto-accept or auto-decline."
+                    textSize = Ios.T_CAPTION; setTextColor(p.label3)
+                    gravity = android.view.Gravity.CENTER
+                    setPadding(0, 0, 0, dp(ctx, 4f))
+                })
+            } else {
+                col.addView(TextView(ctx).apply {
+                    text = if (savedHere.pendingCheck)
+                        "AI controls confirmed · waiting to see this mapping produce an offer"
+                    else "AI controls confirmed on a fresh capture"
+                    textSize = Ios.T_CAPTION; setTextColor(p.label3)
+                    gravity = android.view.Gravity.CENTER
+                    setPadding(0, dp(ctx, 10f), 0, dp(ctx, 4f))
+                })
+            }
+        }
         // Only meaningful on a miss: the parser never consults a hint when its
         // own heuristics produce an offer, so teaching a working screen would
         // be a no-op the user can't see the result of.
@@ -468,6 +548,7 @@ class AssistScreen(
         var active = 0
         var result: String? = null
         var resultOk = false
+        var resultOffer: DetectedOffer? = null
 
         val sheet = IosSheet(ctx, p)
         val col = LinearLayout(ctx).apply {
@@ -495,11 +576,13 @@ class AssistScreen(
         }
 
         fun test(h: ParseHints.Hint): Pair<Boolean, String> {
+            resultOffer = null
             val offer = OfferParser.parse(
                 pkg, flat, extraRe, curSymbol, settings.currencyCode, null, h,
                 settings.distanceUnit,
             )
                 ?: return false to "Still no offer — tap a different node."
+            resultOffer = offer
             val parts = ArrayList<String>(5)
             parts.add(Currencies.format(offer.payoutCents, offer.currencySymbol, offer.currencyCode))
             // The app defaults to miles (SettingsRepository.distanceUnit); the
@@ -587,6 +670,8 @@ class AssistScreen(
                         picks[roles[active]] = anchor
                         if (active < roles.lastIndex) active++
                         result = null
+                        resultOk = false
+                        resultOffer = null
                         render()
                     }
                 })
@@ -599,6 +684,7 @@ class AssistScreen(
                 setPadding(0, dp(ctx, 14f), 0, dp(ctx, 6f))
                 setOnClickListener {
                     val h = hintFor()
+                    resultOffer = null
                     if (h == null) {
                         resultOk = false
                         result = "Pick a payout, or an accept/decline button."
@@ -618,6 +704,31 @@ class AssistScreen(
                     setTextColor(if (resultOk) p.green else p.orange)
                     setPadding(0, 0, 0, dp(ctx, 6f))
                 })
+            }
+
+            // Same parsed card the AI flow shows, so the driver sees the exact
+            // payout, distance, duration and controls a mapping produces.
+            resultOffer?.takeIf { resultOk }?.let { offer ->
+                col.addView(TextView(ctx).apply {
+                    text = "Parsed from this capture"
+                    textSize = Ios.T_FOOTNOTE
+                    setTypeface(typeface, Typeface.BOLD)
+                    setTextColor(p.label3)
+                    setPadding(0, dp(ctx, 8f), 0, dp(ctx, 6f))
+                })
+                col.addView(offerPreviewCard(ctx, p, offer, settings.distanceUnit == "KM"))
+                val controls = listOfNotNull(
+                    "accept ✓".takeIf { offer.acceptNode != null },
+                    "decline ✓".takeIf { offer.declineNode != null },
+                )
+                if (controls.isNotEmpty()) {
+                    col.addView(TextView(ctx).apply {
+                        text = controls.joinToString(" · ")
+                        textSize = Ios.T_CAPTION
+                        setTextColor(p.green)
+                        setPadding(0, dp(ctx, 6f), 0, 0)
+                    })
+                }
             }
 
             if (resultOk) {
@@ -815,6 +926,19 @@ class AssistScreen(
             } catch (_: Exception) { "?" },
             iconGlyph = "doc", iconTint = p.gray,
         ))
+        // Debug builds only: the release stub reports unavailable, so this row
+        // does not exist in the published app.
+        if (DebugSeed.available(ctx)) {
+            card.addView(Sections.separator(ctx, p))
+            card.addView(Sections.row(ctx, p,
+                title = "Debug seed scenarios",
+                subtitle = "Seed a diagnostics capture for parser and AI-fix testing",
+                iconGlyph = "bolt", iconTint = p.orange,
+                chevron = true,
+            ) {
+                DebugSeed.picker(ctx, p, settings) { refresh() }
+            })
+        }
         c_footer(card, "Everything stays on-device. Shiftlit isn't affiliated with any gig platform.")
         return card
     }

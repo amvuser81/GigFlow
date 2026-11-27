@@ -66,7 +66,18 @@ Five tabs behind a floating frosted tab bar:
   when the same card keeps being missed) and points at the payout, distance,
   duration and accept/decline nodes. The mapping is test-parsed against
   that capture, and the sheet previews the parsed payout, distance and
-  duration before it can be saved.
+  duration before it can be saved. Any pick can be corrected by hand, and
+  local checks refuse a tip/fee as the payout or one node doing two jobs.
+- **AI controls are not trusted for automation.** An AI-picked accept or
+  decline reads the card, but never drives auto-accept/auto-decline until
+  you confirm the buttons on a **newer** Diagnostics capture — the snapshot
+  the mapping was built from can never confirm itself. Accept and decline
+  picks must also resolve to clickable nodes, or Save is blocked. Unnamed
+  controls need an explicit tick before the mapping can be saved at all. Saved
+  mappings show their confirmation and last successful read in
+  **AI setup → Saved mappings**, where they can be forgotten. The setup
+  sheet also has **Test connection** and a review of exactly what will be
+  sent, with the earlier-reads history toggleable.
 - **Send a test offer** (Assistant → Automation): dry-runs score → overlay
   → voice without logging anything, so you can verify setup while parked.
 
@@ -98,6 +109,9 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 Debug builds are signed with the committed `app/debug.keystore` (public,
 password `android`) so successive CI debug APKs update in place instead of
 requiring an uninstall. It is a debug-only key and must never sign a release.
+CI verifies every debug APK against the pinned certificate SHA-256, so
+replacing the keystore fails the build instead of silently wiping testers'
+data on the next update.
 
 ### Debug seed for the AI preview
 
@@ -110,8 +124,11 @@ adb shell am start -n app.shiftlit.driver.debug/app.shiftlit.driver.MainActivity
 ```
 
 `--activity-single-top` is what delivers the extra to the already-running
-activity; a plain start only brings its task forward. Then open Assistant →
-Diagnostics → Wolt Courier Partner and tap
+activity; a plain start only brings its task forward. Add
+`--es seed_scenario money` (or `reservation`, `buttons`, `unreadable`) to seed
+a different fixture. A debug build also exposes **About → Debug seed
+scenarios**, so a tester can switch fixtures on the phone. Then open
+Assistant → Diagnostics → Wolt Courier Partner and tap
 "Ask … to fix this screen". The seed only selects OpenRouter as the provider;
 the debug app still needs its own API key.
 

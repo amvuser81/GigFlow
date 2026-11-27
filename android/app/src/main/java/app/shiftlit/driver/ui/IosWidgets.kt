@@ -209,6 +209,9 @@ object Sections {
         }
         val texts = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
+            // Keep long subtitles (model names, endpoint URLs) from running
+            // into the value or chevron on the right.
+            setPadding(0, 0, dp(ctx, 8f), 0)
             row.addView(this, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         }
         texts.addView(TextView(ctx).apply {

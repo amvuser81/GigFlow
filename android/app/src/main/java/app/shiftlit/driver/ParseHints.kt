@@ -30,7 +30,21 @@ object ParseHints {
         val accept: String? = null,
         val decline: String? = null,
         val taughtAt: Long = System.currentTimeMillis(),
-    )
+        /** "teach" for pointer picks, "ai" for a provider proposal. */
+        val source: String = "teach",
+        /** Model that proposed an AI hint, shown in the mappings list. */
+        val model: String? = null,
+        /** AI-picked controls stay untrusted for automation until the driver
+         *  confirms them against a fresh capture. Taught controls default true. */
+        val buttonsConfirmed: Boolean = true,
+        val confirmedAt: Long = 0,
+        /** True until an AI hint has produced an offer on a live screen. */
+        val pendingCheck: Boolean = false,
+        val lastTriedAt: Long = 0,
+        val lastWorkedAt: Long = 0,
+    ) {
+        val isAi: Boolean get() = source == "ai"
+    }
 
     /**
      * Node anchor. Apps routinely give one view id to many nodes — every row of
@@ -175,6 +189,13 @@ object ParseHints {
                                 accept = o.optString("accept").ifBlank { null },
                                 decline = o.optString("decline").ifBlank { null },
                                 taughtAt = o.optLong("taughtAt"),
+                                source = o.optString("source", "teach").ifBlank { "teach" },
+                                model = o.optString("model").ifBlank { null },
+                                buttonsConfirmed = o.optBoolean("buttonsConfirmed", true),
+                                confirmedAt = o.optLong("confirmedAt"),
+                                pendingCheck = o.optBoolean("pendingCheck", false),
+                                lastTriedAt = o.optLong("lastTriedAt"),
+                                lastWorkedAt = o.optLong("lastWorkedAt"),
                             ),
                         )
                     }
@@ -202,7 +223,14 @@ object ParseHints {
                         .put("duration", h.duration ?: "")
                         .put("accept", h.accept ?: "")
                         .put("decline", h.decline ?: "")
-                        .put("taughtAt", h.taughtAt),
+                        .put("taughtAt", h.taughtAt)
+                        .put("source", h.source)
+                        .put("model", h.model ?: "")
+                        .put("buttonsConfirmed", h.buttonsConfirmed)
+                        .put("confirmedAt", h.confirmedAt)
+                        .put("pendingCheck", h.pendingCheck)
+                        .put("lastTriedAt", h.lastTriedAt)
+                        .put("lastWorkedAt", h.lastWorkedAt),
                 )
             }
             root.put(pkg, arr)
@@ -219,6 +247,92 @@ object ParseHints {
         val key = screenKey(nodes)
         return forApp(ctx, pkg).firstOrNull { it.screen == key }
     }
+
+    /** AI-picked controls may drive automation only after a fresh-capture
+     *  confirmation. Taught hints (and no hint at all) are unaffected. */
+    fun automationAllowed(hint: Hint?): Boolean =
+        hint == null || !hint.isAi || hint.buttonsConfirmed
+
+    /**
+     * A mapping can only be confirmed on a capture taken after it was saved.
+     * The capture the model was shown — and the snapshot the fix sheet opened
+     * from — is never proof that the controls are where it says they are.
+     */
+    fun canConfirmOn(hint: Hint, capturedAt: Long): Boolean =
+        hint.taughtAt <= 0 || capturedAt > hint.taughtAt
+
+    /**
+     * Why [hint]'s AI-picked controls cannot drive automation on the capture
+     * taken at [capturedAt], or null when they can. Pure so the gate is
+     * testable without a Context. A button that isn't clickable is rejected
+     * here as well as at save time: an anchor can resolve to a label inside a
+     * button, and tapping that label would do nothing.
+     */
+    fun confirmProblem(
+        hint: Hint,
+        nodes: List<OfferParser.FlatNode>,
+        capturedAt: Long,
+    ): String? {
+        if (!hint.isAi) return null
+        if (!canConfirmOn(hint, capturedAt)) {
+            return "This is the capture the mapping was built from. Wait for a new " +
+                "screen read, then confirm here."
+        }
+        if (hint.accept == null && hint.decline == null) return null
+        if (staleReason(hint, nodes) != null) {
+            return "These controls are no longer on this screen — re-teach it."
+        }
+        for ((role, anchor) in listOf("accept" to hint.accept, "decline" to hint.decline)) {
+            if (anchor == null) continue
+            val node = resolve(nodes, anchor)
+                ?: return "The $role control is no longer on this screen — re-teach it."
+            if (!node.clickable) {
+                return "The $role node is not clickable, so automation can't tap it — " +
+                    "re-teach this screen with a tappable control."
+            }
+        }
+        return null
+    }
+
+    /**
+     * Confirms the AI-picked accept/decline on a capture taken at [capturedAt].
+     * Returns false when that capture is not newer than the mapping, when an
+     * anchor no longer resolves, or when a control isn't clickable — in each
+     * case the mapping should be re-taught rather than trusted.
+     */
+    fun confirmButtons(
+        ctx: Context,
+        hint: Hint,
+        nodes: List<OfferParser.FlatNode>,
+        capturedAt: Long,
+    ): Boolean {
+        if (!hint.isAi) return true
+        if (confirmProblem(hint, nodes, capturedAt) != null) return false
+        save(ctx, hint.copy(
+            buttonsConfirmed = true,
+            confirmedAt = System.currentTimeMillis(),
+            // Confirming the controls does not prove the mapping reads an
+            // offer; only a successful live parse clears pendingCheck.
+        ))
+        return true
+    }
+
+    /** Records what the next live parse of an AI hint did. */
+    fun recordResult(ctx: Context, pkg: String, screen: String, worked: Boolean) {
+        val hint = forKey(ctx, pkg, screen) ?: return
+        val now = System.currentTimeMillis()
+        save(ctx, hint.copy(
+            lastTriedAt = now,
+            lastWorkedAt = if (worked) now else hint.lastWorkedAt,
+            pendingCheck = if (worked) false else hint.pendingCheck,
+        ))
+    }
+
+    /** Every saved mapping, newest first — the management surface. */
+    fun all(ctx: Context): List<Hint> =
+        load(ctx).values.flatten().sortedByDescending { it.taughtAt }
+
+    fun remove(ctx: Context, hint: Hint) = clear(ctx, hint.pkg, hint.screen)
 
     fun save(ctx: Context, hint: Hint) {
         val map = load(ctx).toMutableMap()

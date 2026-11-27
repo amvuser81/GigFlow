@@ -56,6 +56,31 @@ jobs:
             fi
           done
 
+      - name: Verify stable debug signature
+        env:
+          # SHA-256 of android/app/debug.keystore. Pinned on purpose: replacing
+          # this key resets every tester's debug data on the next CI build.
+          EXPECTED_DEBUG_CERT_SHA256: 157455135df69c61ad6cd95b2e7d16e9afc3a92fe0cac60e3e94ba6867e9350b
+        run: |
+          set -euo pipefail
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          test -f "$APK"
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)
+          CERTS=$("$APKSIGNER" verify --print-certs "$APK")
+          ACTUAL=$(printf '%s\n' "$CERTS" \
+            | sed -nE 's/.*certificate SHA-256 digest: *([0-9a-fA-F:]+).*/\1/p' \
+            | head -1 | tr -d ':' | tr 'A-F' 'a-f')
+          if [ -z "$ACTUAL" ]; then
+            echo "::error::Could not read a signing certificate from the debug APK."
+            exit 1
+          fi
+          echo "Debug APK certificate SHA-256: $ACTUAL"
+          if [ "$ACTUAL" != "$EXPECTED_DEBUG_CERT_SHA256" ]; then
+            echo "::error::Debug APK is signed by $ACTUAL but the pinned debug key is $EXPECTED_DEBUG_CERT_SHA256. Replacing that keystore wipes testers' saved keys and diagnostics — restore android/app/debug.keystore."
+            exit 1
+          fi
+          echo "Debug signature matches the pinned key."
+
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v5
         with:

@@ -68,3 +68,6 @@ web/
 
 # Downloaded third-party APKs for accessibility debugging (never commit)
 debug-apps/
+
+# Local build artifacts, screenshots and the portable toolchain
+builds/

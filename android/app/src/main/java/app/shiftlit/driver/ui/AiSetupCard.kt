@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.Typeface
 import android.net.Uri
 import android.text.InputType
+import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
 import android.widget.EditText
@@ -80,6 +81,43 @@ fun aiSettingsSheet(
         ) { keySheet(ctx, p, settings) { render() } })
         col.addView(Sections.separator(ctx, p))
 
+        val testStatus = TextView(ctx).apply {
+            textSize = Ios.T_CAPTION
+            setTextColor(p.label3)
+            setPadding(dp(ctx, 16f), dp(ctx, 2f), dp(ctx, 16f), 0)
+        }
+        col.addView(Sections.row(ctx, p,
+            title = "Test connection",
+            subtitle = "Checks the key, model and endpoint now instead of at a missed offer",
+            value = "Test",
+            iconGlyph = "bolt", iconTint = p.tint,
+            chevron = true,
+        ) {
+            if (settings.aiKey.isBlank()) {
+                Toast.makeText(ctx, "Add your API key first", Toast.LENGTH_SHORT).show()
+            } else {
+                testStatus.setTextColor(p.label2)
+                testStatus.text = "Testing " + provider.label + "…"
+                Thread {
+                    val err = AiSetup.testConnection(
+                        provider, settings.aiKey, settings.aiModel, settings.aiBaseUrl,
+                    )
+                    testStatus.post {
+                        if (err == null) {
+                            testStatus.setTextColor(p.green)
+                            testStatus.text = provider.label +
+                                " answered — key, model and endpoint work."
+                        } else {
+                            testStatus.setTextColor(p.orange)
+                            testStatus.text = err
+                        }
+                    }
+                }.start()
+            }
+        })
+        col.addView(testStatus)
+        col.addView(Sections.separator(ctx, p))
+
         col.addView(Sections.row(ctx, p,
             title = "Model",
             subtitle = settings.aiModel.ifBlank {
@@ -88,6 +126,14 @@ fun aiSettingsSheet(
             iconGlyph = "slider", iconTint = p.gray,
             chevron = true,
         ) { modelSheet(ctx, p, settings) { render() } })
+        col.addView(Sections.separator(ctx, p))
+        col.addView(Sections.row(ctx, p,
+            title = "Saved mappings",
+            subtitle = "AI-fixed and taught screens, with what each one can automate",
+            value = ParseHints.all(ctx).size.toString(),
+            iconGlyph = "doc", iconTint = p.gray,
+            chevron = true,
+        ) { savedMappingsSheet(ctx, p) { render() } })
         col.addView(TextView(ctx).apply {
             text = "Nothing is sent until you tap Ask in Diagnostics. Every other feature " +
                 "works without a key."
@@ -335,13 +381,155 @@ private fun openUrl(ctx: Context, url: String) {
 }
 
 /**
+ * The parser's own reading of a capture, in the same card the AI sheet uses.
+ * Shared with the manual teach sheet so both ways of making a mapping show
+ * the driver the same result.
+ */
+fun offerPreviewCard(
+    ctx: Context,
+    p: Palette,
+    offer: DetectedOffer,
+    isKm: Boolean,
+): View {
+    val preview = AiSetup.previewOf(offer, isKm)
+    return LinearLayout(ctx).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(ctx, 14f), dp(ctx, 8f), dp(ctx, 14f), dp(ctx, 8f))
+        background = Ios.rounded(Ios.R_BUTTON, p.fill, ctx)
+        addView(ruleRow(ctx, p, "Payout", preview.payout))
+        addView(ruleRow(
+            ctx, p, "Distance", preview.distance ?: "not read",
+            if (preview.distance == null) p.orange else p.label,
+        ))
+        addView(ruleRow(
+            ctx, p, "Duration", preview.duration ?: "not read",
+            if (preview.duration == null) p.orange else p.label,
+        ))
+    }
+}
+
+/** One relative-time phrase, shared by the mapping manager. */
+private fun lastSeen(at: Long): String {
+    if (at <= 0) return "never"
+    val s = ((System.currentTimeMillis() - at) / 1000).coerceAtLeast(0)
+    return when {
+        s < 60 -> "just now"
+        s < 3600 -> "${s / 60} min ago"
+        s < 86_400 -> "${s / 3600} h ago"
+        else -> "${s / 86_400} d ago"
+    }
+}
+
+/**
+ * Every saved mapping, with the one fact that matters for each: is this an AI
+ * mapping whose controls were never confirmed, and has it produced an offer on
+ * a live screen? Forget is here so a bad AI guess can always be undone.
+ */
+private fun savedMappingsSheet(ctx: Context, p: Palette, onChanged: () -> Unit) {
+    val sheet = IosSheet(ctx, p)
+    val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+    sheet.add(col)
+    fun render() {
+        col.removeAllViews()
+        col.addView(sheetColumn(ctx, p, "Saved mappings",
+            "AI-fixed and manually taught screens. A mapping only applies to the " +
+                "layout it was made on; forgetting one re-enables the normal parser there."))
+        val hints = ParseHints.all(ctx)
+        if (hints.isEmpty()) {
+            col.addView(TextView(ctx).apply {
+                text = "No saved mappings yet."
+                textSize = Ios.T_FOOTNOTE
+                setTextColor(p.label2)
+                setPadding(dp(ctx, 20f), dp(ctx, 6f), dp(ctx, 20f), dp(ctx, 16f))
+            })
+        }
+        hints.forEach { h ->
+            val rows = LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(ctx, 20f), dp(ctx, 12f), dp(ctx, 20f), dp(ctx, 8f))
+            }
+            rows.addView(TextView(ctx).apply {
+                text = if (h.isAi) "AI mapping" else "Taught mapping"
+                textSize = Ios.T_SUBHEAD
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(p.label)
+            })
+            rows.addView(TextView(ctx).apply {
+                text = h.pkg
+                textSize = Ios.T_FOOTNOTE
+                setTextColor(p.label3)
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+            })
+            h.model?.let { model ->
+                rows.addView(TextView(ctx).apply {
+                    text = model
+                    textSize = Ios.T_FOOTNOTE
+                    setTextColor(p.label3)
+                    maxLines = 1
+                    ellipsize = TextUtils.TruncateAt.END
+                })
+            }
+            rows.addView(TextView(ctx).apply {
+                text = "screen " + h.screen
+                textSize = Ios.T_FOOTNOTE
+                setTextColor(p.label3)
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+            })
+            val status = when {
+                h.isAi && !h.buttonsConfirmed ->
+                    "Buttons unconfirmed — no auto-accept or auto-decline"
+                h.pendingCheck -> "Not seen working on a live screen yet"
+                h.lastWorkedAt > 0 -> "Last read worked ${lastSeen(h.lastWorkedAt)}"
+                else -> "No live read since it was saved"
+            }
+            rows.addView(TextView(ctx).apply {
+                text = status
+                textSize = Ios.T_FOOTNOTE
+                setTextColor(
+                    if (h.isAi && !h.buttonsConfirmed) p.orange
+                    else if (h.pendingCheck) p.orange else p.green,
+                )
+                setPadding(0, dp(ctx, 2f), 0, 0)
+            })
+            rows.addView(TextView(ctx).apply {
+                text = "Forget this mapping"
+                textSize = Ios.T_FOOTNOTE
+                setTextColor(p.red)
+                setPadding(0, dp(ctx, 6f), 0, 0)
+                setOnClickListener {
+                    ParseHints.remove(ctx, h)
+                    Toast.makeText(ctx, "Mapping forgotten", Toast.LENGTH_SHORT).show()
+                    onChanged()
+                    render()
+                }
+            })
+            col.addView(rows)
+            col.addView(Sections.separator(ctx, p))
+        }
+        col.addView(TextView(ctx).apply {
+            text = "Close"
+            textSize = Ios.T_BODY
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(p.tint)
+            gravity = Gravity.CENTER
+            setPadding(0, dp(ctx, 10f), 0, 0)
+            setOnClickListener { sheet.dismiss() }
+        })
+    }
+    render()
+    sheet.show()
+}
+
+/**
  * Ask the provider to read one diagnostics capture and point at the nodes the
  * parser needs: payout, distance, duration, accept, decline.
  *
- * Nothing is written until the proposed mapping is run through the real
- * [OfferParser] on that capture. A mapping that doesn't produce an offer is
- * shown as a failed test and cannot be saved, so a plausible-sounding answer
- * can't quietly change how a screen is read.
+ * The driver can correct any pick before saving. The mapping is then run
+ * through the real [OfferParser] on that capture. An AI-picked accept/decline
+ * is never trusted for automation until the driver confirms it on a fresh
+ * capture, and an unnamed control needs an explicit tick before Save at all.
  */
 fun screenFixSheet(
     ctx: Context,
@@ -372,19 +560,21 @@ fun screenFixSheet(
     val symbol = settings.currencySymbol
     val extra = OfferParser.extraMoney(settings.currencyCode, symbol)
     val currency = settings.currencyCode + " (" + symbol + ")"
-    // The key captured with the snapshot wins where there is one: it was
-    // computed before the node cap, so it matches what a live scan produces.
     val screen = snap.screen.ifBlank { ParseHints.screenKey(flat) }
-    // Reads older than this capture. They carry no node tree, only outcome,
-    // decision and a few texts — enough to see that the same card keeps missing.
     val earlier = Diagnostics.history(ctx, pkg).filter { it.at < snap.at }.take(6)
+    val modelName = settings.aiModel.ifBlank { provider.defaultModel }
+
+    var fix = AiSetup.ScreenFix()
+    var raw = AiSetup.ScreenFix()
+    var includeHistory = true
+    var confirmAccept = false
+    var confirmDecline = false
 
     val sheet = IosSheet(ctx, p)
     val col = sheetColumn(ctx, p, "Fix this screen with AI",
         "$name · ${flat.size} captured nodes. " + provider.label + " reads this one screen, " +
             "explains why it missed, and points at the payout, distance, duration and " +
-            "accept/decline nodes.")
-    sheet.add(col)
+            "accept/decline nodes. You can correct any pick before saving.")
 
     val status = TextView(ctx).apply {
         textSize = Ios.T_FOOTNOTE
@@ -398,14 +588,82 @@ fun screenFixSheet(
         LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         .apply { topMargin = dp(ctx, 12f) })
 
+    val privacy = TextView(ctx).apply {
+        textSize = Ios.T_CAPTION
+        setTextColor(p.label3)
+        setPadding(0, dp(ctx, 8f), 0, 0)
+    }
+    val historyToggle = TextView(ctx).apply {
+        textSize = Ios.T_FOOTNOTE
+        setTextColor(p.tint)
+        setPadding(0, dp(ctx, 6f), 0, 0)
+    }
+    fun updatePrivacy() {
+        val historyPart = if (includeHistory && earlier.isNotEmpty())
+            " and ${earlier.size} earlier reads" else ""
+        privacy.text = "Sends this screen (${flat.size} nodes)$historyPart to " +
+            provider.label + ". Your API key is never included."
+        historyToggle.text = (if (includeHistory) "☑" else "☐") +
+            " Include earlier reads (${earlier.size})"
+    }
+    updatePrivacy()
+    col.addView(privacy)
+    if (earlier.isNotEmpty()) {
+        historyToggle.setOnClickListener {
+            includeHistory = !includeHistory
+            updatePrivacy()
+        }
+        col.addView(historyToggle)
+    }
+    col.addView(TextView(ctx).apply {
+        text = "Review what is sent"
+        textSize = Ios.T_FOOTNOTE
+        setTextColor(p.tint)
+        setPadding(0, dp(ctx, 6f), 0, 0)
+        setOnClickListener {
+            val prompt = AiSetup.screenPrompt(
+                appName = name,
+                pkg = pkg,
+                outcome = snap.outcome,
+                screen = snap.screen,
+                nodes = snap.nodes,
+                decision = snap.decision,
+                currency = currency,
+                unit = unit,
+                history = if (includeHistory) earlier else emptyList(),
+            )
+            val rs = IosSheet(ctx, p)
+            val rc = sheetColumn(ctx, p, "What will be sent",
+                "Exactly the capture below goes to " + provider.label +
+                    ". Your key and saved settings are not part of it.")
+            rc.addView(TextView(ctx).apply {
+                text = prompt.text.take(8000)
+                textSize = Ios.T_CAPTION
+                typeface = Typeface.MONOSPACE
+                setTextColor(p.label2)
+            })
+            rc.addView(TextView(ctx).apply {
+                text = "Close"
+                textSize = Ios.T_BODY
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(p.tint)
+                gravity = Gravity.CENTER
+                setPadding(0, dp(ctx, 14f), 0, 0)
+                setOnClickListener { rs.dismiss() }
+            })
+            rs.add(rc).show()
+        }
+    })
+
     val resultBox = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
     col.addView(resultBox)
 
     fun nodeLabel(i: Int?): String {
-        if (i == null) return ""
-        val n = flat.getOrNull(i) ?: return ""
+        if (i == null) return "Not set"
+        val n = flat.getOrNull(i) ?: return "Not set"
         val text = if (n.text.isBlank()) {
-            if (n.clickable) "(unnamed button)" else "(unnamed)"
+            val corner = "at ${n.bounds.left},${n.bounds.top}"
+            if (n.clickable) "(unnamed button $corner)" else "(unnamed $corner)"
         } else n.text.take(60)
         return "$text  ·  node $i"
     }
@@ -415,100 +673,219 @@ fun screenFixSheet(
         settings.distanceUnit,
     )
 
-    fun showResult(seen: AiSetup.ScreenFix) {
-        resultBox.removeAllViews()
-        val fix = AiSetup.sanitize(seen, snap.nodes, extra, symbol)
+    fun isUnlabeled(i: Int?): Boolean =
+        i != null && flat.getOrNull(i)?.text.isNullOrBlank()
 
-        fun line(body: String, size: Float, color: Int, top: Float, bold: Boolean) {
-            resultBox.addView(TextView(ctx).apply {
-                this.text = body
-                textSize = size
-                setTextColor(color)
-                if (bold) setTypeface(typeface, Typeface.BOLD)
-                setPadding(0, dp(ctx, top), 0, 0)
+    var rerender: () -> Unit = {}
+
+    fun setRole(role: String, i: Int?) {
+        fix = when (role) {
+            "Payout" -> fix.copy(payout = i)
+            "Distance" -> fix.copy(distance = i)
+            "Duration" -> fix.copy(duration = i)
+            "Accept" -> fix.copy(accept = i)
+            else -> fix.copy(decline = i)
+        }
+        if (role == "Accept") confirmAccept = false
+        if (role == "Decline") confirmDecline = false
+        rerender()
+    }
+
+    fun pickNode(role: String, current: Int?) {
+        val ps = IosSheet(ctx, p)
+        val pc = sheetColumn(ctx, p, "Pick $role",
+            "Tap the node that holds the $role. Amounts still have to pass the parser's " +
+                "own value check before they can be saved.")
+        pc.addView(TextView(ctx).apply {
+            text = "None"
+            textSize = Ios.T_BODY
+            setTextColor(p.label2)
+            setPadding(0, dp(ctx, 8f), 0, dp(ctx, 8f))
+            setOnClickListener {
+                ps.dismiss()
+                setRole(role, null)
+            }
+        })
+        flat.forEachIndexed { i, n ->
+            val text = when {
+                n.text.isNotBlank() -> n.text.take(90)
+                n.clickable -> "(unnamed button at ${n.bounds.left},${n.bounds.top})"
+                else -> "(unnamed at ${n.bounds.left},${n.bounds.top})"
+            }
+            pc.addView(TextView(ctx).apply {
+                this.text = "$i · $text" +
+                    (n.viewId?.substringAfterLast('/')?.let { "  ·  $it" }.orEmpty())
+                textSize = Ios.T_FOOTNOTE
+                setTextColor(if (i == current) p.tint else p.label)
+                if (i == current) setTypeface(typeface, Typeface.BOLD)
+                setPadding(0, dp(ctx, 7f), 0, dp(ctx, 7f))
+                setOnClickListener {
+                    ps.dismiss()
+                    setRole(role, i)
+                }
             })
         }
+        ps.add(pc).show()
+    }
 
-        seen.note?.let {
+    fun line(body: String, size: Float, color: Int, top: Float, bold: Boolean = false) {
+        resultBox.addView(TextView(ctx).apply {
+            text = body
+            textSize = size
+            setTextColor(color)
+            if (bold) setTypeface(typeface, Typeface.BOLD)
+            setPadding(0, dp(ctx, top), 0, 0)
+        })
+    }
+
+    fun roleEditor(role: String, i: Int?) {
+        // Two lines: the role and its action, then the picked node. A long
+        // unlabeled-control label used to wrap underneath the Change column.
+        val row = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(ctx, 8f), 0, dp(ctx, 4f))
+            setOnClickListener { pickNode(role, i) }
+        }
+        row.addView(LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(TextView(ctx).apply {
+                text = role
+                textSize = Ios.T_BODY
+                setTextColor(p.label2)
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            addView(TextView(ctx).apply {
+                text = "Change"
+                textSize = Ios.T_FOOTNOTE
+                setTextColor(p.tint)
+            })
+        })
+        row.addView(TextView(ctx).apply {
+            text = nodeLabel(i)
+            textSize = Ios.T_FOOTNOTE
+            setTextColor(if (i == null) p.orange else p.label)
+            setPadding(0, dp(ctx, 1f), 0, 0)
+        })
+        resultBox.addView(row)
+    }
+
+    fun renderResult() {
+        resultBox.removeAllViews()
+        raw.note?.let {
             line("What it found", Ios.T_FOOTNOTE, p.label3, 14f, bold = true)
-            line(it, Ios.T_FOOTNOTE, p.label2, 4f, bold = false)
+            line(it, Ios.T_FOOTNOTE, p.label2, 4f)
         }
 
         val dropped = ArrayList<String>(3)
-        if (seen.payout != null && fix.payout == null) dropped.add("payout")
-        if (seen.distance != null && fix.distance == null) dropped.add("distance")
-        if (seen.duration != null && fix.duration == null) dropped.add("duration")
+        if (raw.payout != null && fix.payout == null) dropped.add("payout")
+        if (raw.distance != null && fix.distance == null) dropped.add("distance")
+        if (raw.duration != null && fix.duration == null) dropped.add("duration")
         if (dropped.isNotEmpty()) {
             line(
                 "Ignored " + dropped.joinToString(", ") +
                     ": that node doesn't hold the kind of value the role needs.",
-                Ios.T_CAPTION, p.orange, 6f, bold = false,
+                Ios.T_CAPTION, p.orange, 6f,
             )
         }
 
-        val roles = listOf(
-            "Payout" to fix.payout,
-            "Distance" to fix.distance,
-            "Duration" to fix.duration,
-            "Accept" to fix.accept,
-            "Decline" to fix.decline,
-        )
-        roles.forEach { (role, i) ->
-            if (i != null) resultBox.addView(ruleRow(ctx, p, role, nodeLabel(i)))
+        line("Tap a row to correct it", Ios.T_FOOTNOTE, p.label3, 12f, bold = true)
+        roleEditor("Payout", fix.payout)
+        roleEditor("Distance", fix.distance)
+        roleEditor("Duration", fix.duration)
+        roleEditor("Accept", fix.accept)
+        roleEditor("Decline", fix.decline)
+
+        val sanity = AiSetup.sanity(fix, snap.nodes, extra, symbol)
+        sanity.warnings.forEach { line("Check: $it", Ios.T_FOOTNOTE, p.orange, 6f) }
+        sanity.blockers.forEach { line("Can't save: $it", Ios.T_FOOTNOTE, p.orange, 6f) }
+
+        // An unnamed control is a box on a screen, not a label — a model can be
+        // exactly wrong about which corner it is. Saving one requires a human
+        // tick, separately for accept and decline.
+        if (isUnlabeled(fix.accept)) {
+            val checked = confirmAccept
+            resultBox.addView(TextView(ctx).apply {
+                text = (if (checked) "☑" else "☐") +
+                    " I checked that this unnamed control is Accept"
+                textSize = Ios.T_FOOTNOTE
+                setTextColor(if (checked) p.green else p.orange)
+                setPadding(0, dp(ctx, 8f), 0, 0)
+                setOnClickListener {
+                    confirmAccept = !confirmAccept
+                    renderResult()
+                }
+            })
+        }
+        if (isUnlabeled(fix.decline)) {
+            val checked = confirmDecline
+            resultBox.addView(TextView(ctx).apply {
+                text = (if (checked) "☑" else "☐") +
+                    " I checked that this unnamed control is Decline"
+                textSize = Ios.T_FOOTNOTE
+                setTextColor(if (checked) p.green else p.orange)
+                setPadding(0, dp(ctx, 4f), 0, 0)
+                setOnClickListener {
+                    confirmDecline = !confirmDecline
+                    renderResult()
+                }
+            })
         }
 
         if (!fix.canSave) {
             line(
-                "It didn't point at a payout or an accept/decline button, so there is " +
-                    "nothing to save for this screen.",
-                Ios.T_FOOTNOTE, p.orange, 10f, bold = false,
+                "Pick a payout or an accept/decline button — there is nothing to save yet.",
+                Ios.T_FOOTNOTE, p.orange, 10f,
             )
             return
         }
-        val h = AiSetup.hintFor(fix, pkg, screen, flat) ?: return
+        val h = AiSetup.hintFor(
+            fix, pkg, screen, flat,
+            source = "ai", model = modelName,
+        ) ?: return
         val offer = test(h)
         if (offer == null) {
             line(
                 "Those nodes still don't make an offer on this capture. Nothing is saved — " +
-                    "try \"Teach this screen\" instead.",
-                Ios.T_FOOTNOTE, p.orange, 10f, bold = false,
+                    "try a different node, or \"Teach this screen\" instead.",
+                Ios.T_FOOTNOTE, p.orange, 10f,
             )
             return
         }
-        // The real parser's reading of that capture, shown before the mapping
-        // can be saved: the driver sees the payout, distance and duration the
-        // hint would actually produce, not just the nodes it points at.
-        val preview = AiSetup.previewOf(offer, isKm)
+
         line("Parsed from this capture", Ios.T_FOOTNOTE, p.label3, 14f, bold = true)
-        val parsed = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(ctx, 14f), dp(ctx, 8f), dp(ctx, 14f), dp(ctx, 8f))
-            background = Ios.rounded(Ios.R_BUTTON, p.fill, ctx)
-        }
-        parsed.addView(ruleRow(ctx, p, "Payout", preview.payout))
-        parsed.addView(ruleRow(
-            ctx, p, "Distance", preview.distance ?: "not read",
-            if (preview.distance == null) p.orange else p.label,
-        ))
-        parsed.addView(ruleRow(
-            ctx, p, "Duration", preview.duration ?: "not read",
-            if (preview.duration == null) p.orange else p.label,
-        ))
-        resultBox.addView(parsed, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            .apply { topMargin = dp(ctx, 6f) })
+        resultBox.addView(offerPreviewCard(ctx, p, offer, isKm))
         val controls = listOfNotNull(
             "accept ✓".takeIf { offer.acceptNode != null },
             "decline ✓".takeIf { offer.declineNode != null },
         )
         if (controls.isNotEmpty()) {
-            line(controls.joinToString(" · "), Ios.T_CAPTION, p.green, 6f, bold = false)
+            line(controls.joinToString(" · "), Ios.T_CAPTION, p.green, 6f)
         }
         line(
-            "Saved like a taught mapping: it applies only on this screen, and only when " +
-                "the normal parser finds nothing.",
-            Ios.T_CAPTION, p.label3, 6f, bold = false,
+            "This mapping only applies on this screen. Its amounts are used only where " +
+                "the normal parser finds nothing; its buttons apply whenever this screen " +
+                "is read.",
+            Ios.T_CAPTION, p.label3, 6f,
         )
+        if (h.accept != null || h.decline != null) {
+            line(
+                "AI-picked buttons never auto-accept or auto-decline until you confirm them " +
+                    "on a fresh capture in Diagnostics.",
+                Ios.T_CAPTION, p.orange, 4f,
+            )
+        }
+
+        val unnamedOk =
+            (!isUnlabeled(fix.accept) || confirmAccept) &&
+                (!isUnlabeled(fix.decline) || confirmDecline)
+        if (!sanity.ok || !unnamedOk) {
+            val why = when {
+                !sanity.ok -> "Fix the issue above before saving."
+                else -> "Tick the unnamed control above before saving."
+            }
+            line(why, Ios.T_FOOTNOTE, p.orange, 10f)
+            return
+        }
         val apply = iosButton(ctx, p, "Save this mapping", p.green)
         resultBox.addView(apply, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
@@ -517,20 +894,30 @@ fun screenFixSheet(
             ParseHints.save(ctx, h)
             sheet.dismiss()
             Toast.makeText(
-                ctx, "Mapping saved — it applies the next time this screen is read",
-                Toast.LENGTH_SHORT,
+                ctx,
+                if (h.accept != null || h.decline != null)
+                    "Mapping saved — confirm its buttons on a fresh capture before auto-accept"
+                else "Mapping saved — it applies the next time this screen is read",
+                Toast.LENGTH_LONG,
             ).show()
             onChanged()
         }
     }
 
+    rerender = { renderResult() }
+
     ask.setOnClickListener {
         resultBox.removeAllViews()
+        fix = AiSetup.ScreenFix()
+        raw = AiSetup.ScreenFix()
+        confirmAccept = false
+        confirmDecline = false
         status.setTextColor(p.label2)
-        val sent = if (earlier.isEmpty()) {
+        val sentHistory = if (includeHistory) earlier else emptyList()
+        val sent = if (sentHistory.isEmpty()) {
             "this screen (${flat.size} nodes)"
         } else {
-            "this screen (${flat.size} nodes) and ${earlier.size} earlier reads"
+            "this screen (${flat.size} nodes) and ${sentHistory.size} earlier reads"
         }
         status.text = "Sending $sent to " + provider.label +
             ". Only this app's diagnostics leave the phone."
@@ -550,7 +937,7 @@ fun screenFixSheet(
                 decision = snap.decision,
                 currency = currency,
                 unit = unit,
-                history = earlier,
+                history = sentHistory,
             )
             status.post {
                 ask.isEnabled = true
@@ -562,12 +949,16 @@ fun screenFixSheet(
                     }
                     is AiSetup.FixResult.Ok -> {
                         status.text = ""
-                        showResult(r.fix)
+                        raw = r.fix
+                        fix = AiSetup.sanitize(r.fix, snap.nodes, extra, symbol)
+                        confirmAccept = false
+                        confirmDecline = false
+                        renderResult()
                     }
                 }
             }
         }.start()
     }
 
-    sheet.show()
+    sheet.add(col).show()
 }

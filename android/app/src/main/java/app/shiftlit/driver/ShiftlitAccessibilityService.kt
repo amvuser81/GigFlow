@@ -56,6 +56,8 @@ class ShiftlitAccessibilityService : AccessibilityService() {
     private var lastDriverAppAt = 0L
     private var idleStopCheck: Runnable? = null
     private val loggedCompletions = mutableSetOf<String>()
+    /** One undo hint per failed AI mapping, not one per retry frame. */
+    private var lastAiMissKey = ""
 
     companion object {
         /** Auto-stop shift tracking after this long with no driver-app events. */
@@ -510,6 +512,12 @@ class ShiftlitAccessibilityService : AccessibilityService() {
             pkg, nodes, extraRe, curSymbol, settings.currencyCode, decision, hint,
             settings.distanceUnit,
         )
+        // Track whether an AI mapping actually works. Throttled: a card can
+        // produce several scans, and each write rewrites the hint store.
+        val aiPendingMiss = offer == null && hint != null && hint.isAi && hint.pendingCheck
+        if (hint != null && hint.isAi && now - hint.lastTriedAt > 30_000L) {
+            ParseHints.recordResult(this, pkg, hint.screen, offer != null)
+        }
         if (offer == null) {
             // A screen with a money figure but no parse is a "miss" — the
             // card was probably there but the layout beat the heuristic.
@@ -526,11 +534,26 @@ class ShiftlitAccessibilityService : AccessibilityService() {
                 )
                 return
             }
+            // Surface a failed AI mapping only after the retries, not on a
+            // frame captured mid-animation.
+            if (aiPendingMiss) {
+                Diagnostics.note(
+                    this, pkg,
+                    "AI mapping did not produce an offer here — remove it in " +
+                        "AI setup → Saved mappings if it keeps missing",
+                )
+                val missKey = pkg + "|" + (hint?.screen ?: "")
+                if (lastAiMissKey != missKey) {
+                    lastAiMissKey = missKey
+                    toast("AI mapping didn't read this screen — undo in AI setup → Saved mappings")
+                }
+            }
             maybeOfferGone(now)
             if (hasMoney) maybeTeachBar(pkg, nodes, hint != null) else hideMissBar()
             return
         }
         Diagnostics.record(this, pkg, "offer", nodes, decision)
+        lastAiMissKey = ""
         // A card this screen could parse proves the bar's job here is done;
         // if the same screen later misses, it should get to ask again.
         lastMissKey = ""
@@ -583,8 +606,13 @@ class ShiftlitAccessibilityService : AccessibilityService() {
             )
         }
 
+        // An AI-picked control is untrusted for automation until the driver has
+        // confirmed it on a fresh capture. Manual taps still work; only the
+        // automatic countdown and auto-decline are gated.
+        val automationTrusted = ParseHints.automationAllowed(hint)
         val autoAcceptDelay =
             if (prefs.autoAccept && scored.verdict == Verdict.GOOD && offer.acceptNode != null &&
+                automationTrusted &&
                 (settings.autoAcceptReservations || !offer.isReservation))
                 settings.autoAcceptDelaySec else 0
 
@@ -623,7 +651,7 @@ class ShiftlitAccessibilityService : AccessibilityService() {
         // configured countdown so the driver can cancel.
         if (autoAcceptDelay > 0) {
             scheduleAutoAccept(scored, offer.acceptNode!!, autoAcceptDelay)
-        } else if (prefs.autoDecline && scored.verdict == Verdict.BAD) {
+        } else if (prefs.autoDecline && scored.verdict == Verdict.BAD && automationTrusted) {
             offer.declineNode?.let { node ->
                 GesturePerformer.tap(this, node.bounds) { ok ->
                     if (ok) recordAction(scored, "auto_decline")

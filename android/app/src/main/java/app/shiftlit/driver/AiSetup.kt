@@ -11,11 +11,12 @@ import java.net.URL
  * capture a human maintainer would get, explains the miss, and points at the
  * nodes that hold the payout, distance, duration and accept/decline controls.
  *
- * That mapping is saved as an ordinary taught hint — the identical mechanism
- * the point-at-the-card flow uses — so it is tested against the capture before
- * anything is written. Nothing here is required by the assistant and nothing
- * is proxied: the request goes from this phone straight to the provider, with
- * the key the driver entered. There is no Shiftlit server to send anything to.
+ * That mapping is saved through the same hint mechanism the point-at-the-card
+ * flow uses, tagged as AI. It is tested against the capture before anything is
+ * written, and AI-picked controls stay untrusted for automation until the
+ * driver confirms them on a fresh capture. Nothing here is required by the
+ * assistant and nothing is proxied: the request goes from this phone straight
+ * to the provider, with the key the driver entered.
  */
 enum class AiProvider(
     val label: String,
@@ -82,6 +83,104 @@ object AiSetup {
     sealed class FixResult {
         data class Ok(val fix: ScreenFix) : FixResult()
         data class Err(val message: String) : FixResult()
+    }
+
+    /** Local checks around a proposed mapping. Blockers stop Save; warnings
+     *  are shown next to the preview so the driver can judge the pick. */
+    data class Sanity(
+        val blockers: List<String> = emptyList(),
+        val warnings: List<String> = emptyList(),
+    ) {
+        val ok: Boolean get() = blockers.isEmpty()
+    }
+
+    private val TRIP_PAY_WORDS = listOf("tip", "fee", "bonus", "balance", "wallet", "earnings")
+
+    /**
+     * Checks the pick against the node text, not the model's explanation. Catches
+     * the two expensive failures: a tip/fee read as trip pay, and one node doing
+     * two incompatible jobs. Every rule is deterministic so it can be tested.
+     */
+    fun sanity(
+        fix: ScreenFix,
+        nodes: List<Diagnostics.Node>,
+        extra: Regex? = null,
+        symbol: String = "$",
+    ): Sanity {
+        val blockers = ArrayList<String>(3)
+        val warnings = ArrayList<String>(3)
+        fun text(i: Int?): String = i?.let { nodes.getOrNull(it)?.text }.orEmpty().lowercase()
+        fun label(i: Int?): String =
+            i?.let { nodes.getOrNull(it)?.text?.trim() }.orEmpty()
+
+        val indices = listOf(
+            "payout" to fix.payout,
+            "distance" to fix.distance,
+            "duration" to fix.duration,
+            "accept" to fix.accept,
+            "decline" to fix.decline,
+        )
+        val duplicates = indices.filter { it.second != null }
+            .groupBy { it.second }
+            .filterValues { it.size > 1 }
+        duplicates.forEach { (_, roles) ->
+            blockers.add("${roles.joinToString(" and ") { it.first }} point at the same node.")
+        }
+
+        val payoutText = text(fix.payout)
+        TRIP_PAY_WORDS.firstOrNull { payoutText.contains(it) }?.let { word ->
+            blockers.add(
+                "The payout node says \"$word\" — that is not the trip pay. " +
+                    "Pick the amount the driver earns for this offer.",
+            )
+        }
+        if (payoutText.contains("total") || payoutText.contains("customer")) {
+            warnings.add("The payout node mentions a total or customer amount — check it is the trip pay.")
+        }
+
+        val moneyNodes = nodes.count { OfferParser.moneyOf(it.text, extra, symbol) != null }
+        if (moneyNodes > 1 && fix.payout != null) {
+            warnings.add(
+                "$moneyNodes money values are on this screen; make sure the payout is the " +
+                    "trip pay, not a tip, fee or total.",
+            )
+        }
+
+        if (fix.distance != null && fix.distance == fix.duration) {
+            warnings.add("Distance and duration point at the same node; the parser may read one value twice.")
+        }
+
+        val acceptLabel = label(fix.accept).lowercase()
+        val declineLabel = label(fix.decline).lowercase()
+        if (acceptLabel.startsWith("decline")) {
+            blockers.add("Accept points at a Decline control — the two picks are swapped.")
+        }
+        if (declineLabel.startsWith("accept")) {
+            blockers.add("Decline points at an Accept control — the two picks are swapped.")
+        }
+        if (acceptLabel.isNotEmpty() &&
+            listOf("cancel", "close").any { acceptLabel == it || acceptLabel.startsWith("$it ") }
+        ) {
+            warnings.add("The accept node is labelled \"${label(fix.accept).take(30)}\" — is that really the accept control?")
+        }
+        if (fix.accept != null && label(fix.accept).isEmpty()) {
+            warnings.add("Accept is an unnamed control — confirm it by hand before saving.")
+        }
+        if (fix.decline != null && label(fix.decline).isEmpty()) {
+            warnings.add("Decline is an unnamed control — confirm it by hand before saving.")
+        }
+        // A tap needs a clickable node. Models often point at the label inside
+        // a button, which reads fine but can never be pressed by automation.
+        listOf("accept" to fix.accept, "decline" to fix.decline).forEach { (role, i) ->
+            val n = i?.let { nodes.getOrNull(it) } ?: return@forEach
+            if (!n.clickable) {
+                blockers.add(
+                    "The $role node is not clickable, so automation can't tap it. " +
+                        "Pick the clickable button (or the card) instead.",
+                )
+            }
+        }
+        return Sanity(blockers.distinct(), warnings.distinct())
     }
 
     private const val FIX_SYSTEM = """You debug Shiftlit, an Android app that reads gig-driver offer cards from the accessibility tree. A screen did not score as an offer, or scored wrongly. You are given the captured nodes in tree order, each with a stable index, and the parser's decision trail.
@@ -277,8 +376,15 @@ Rules:
         pkg: String,
         screen: String,
         nodes: List<OfferParser.FlatNode>,
+        source: String = "teach",
+        model: String? = null,
     ): ParseHints.Hint? {
         if (!fix.canSave) return null
+        // Refuse the mapping rather than save a control automation can never
+        // press. The sheet shows the sanity blocker for this same check.
+        if (listOfNotNull(fix.accept, fix.decline)
+                .any { nodes.getOrNull(it)?.clickable != true }
+        ) return null
         return ParseHints.Hint(
             pkg = pkg,
             screen = screen,
@@ -287,6 +393,12 @@ Rules:
             duration = fix.duration?.let { ParseHints.anchor(nodes, it) },
             accept = fix.accept?.let { ParseHints.anchor(nodes, it) },
             decline = fix.decline?.let { ParseHints.anchor(nodes, it) },
+            source = source,
+            model = model,
+            // An AI pick is never trusted for automation on its own; even a
+            // labelled button has to be seen on a fresh capture first.
+            buttonsConfirmed = source != "ai" || (fix.accept == null && fix.decline == null),
+            pendingCheck = source == "ai",
         )
     }
 
@@ -342,6 +454,26 @@ Rules:
                 }
             }
         }
+    }
+
+    /**
+     * A tiny live check for the setup sheet: validates the key, endpoint and
+     * model together, without waiting for a missed offer. Returns null on
+     * success, otherwise the same actionable error the real request would give.
+     */
+    fun testConnection(
+        provider: AiProvider,
+        apiKey: String,
+        model: String,
+        baseUrl: String,
+    ): String? = when (val r = send(
+        provider, apiKey, model, baseUrl,
+        "You verify API access. Reply with exactly: OK",
+        "Reply with exactly: OK",
+        8,
+    )) {
+        is Reply.Err -> r.message
+        is Reply.Ok -> null
     }
 
     private sealed class Reply {

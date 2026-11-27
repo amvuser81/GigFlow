@@ -44,6 +44,7 @@ class MainActivity : Activity() {
         settings = SettingsRepository(this)
         DebugSeed.seedIfRequested(
             this, intent?.getBooleanExtra(DebugSeed.EXTRA, false) == true, settings,
+            intent?.getStringExtra(DebugSeed.SCENARIO),
         )
         db = LocalDb(this)
         p = Ios.palette(this)
@@ -114,6 +115,7 @@ class MainActivity : Activity() {
         setIntent(intent)
         DebugSeed.seedIfRequested(
             this, intent.getBooleanExtra(DebugSeed.EXTRA, false), settings,
+            intent.getStringExtra(DebugSeed.SCENARIO),
         )
         if (::assist.isInitialized) refresh(current)
     }
