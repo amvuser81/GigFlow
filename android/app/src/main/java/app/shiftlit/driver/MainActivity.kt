@@ -41,6 +41,9 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         settings = SettingsRepository(this)
+        DebugSeed.seedIfRequested(
+            this, intent?.getBooleanExtra(DebugSeed.EXTRA, false) == true, settings,
+        )
         db = LocalDb(this)
         p = Ios.palette(this)
 
