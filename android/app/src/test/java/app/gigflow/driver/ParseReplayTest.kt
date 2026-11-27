@@ -26,6 +26,22 @@ class ParseReplayTest {
     }
 
     @Test
+    fun cnyResolvesByIsoCodeNotByTheYenSymbol() {
+        val f = ReplayFixtures.cny
+        val extra = OfferParser.extraMoney("CNY", "¥")
+        val offer = OfferParser.parse(f.pkg, f.nodes, extra, "¥", "CNY")
+        assertNotNull("¥40 for 10 km must not be read as 40 yen", offer)
+        val o = offer!!
+        assertEquals(4_000, o.payoutCents)
+        assertEquals("¥", o.currencySymbol)
+        assertEquals(10.0, o.distanceKm!!, 0.001)
+        // The contract this rests on: "¥" alone resolves to the first
+        // registered entry (JPY); the configured code is what disambiguates.
+        assertEquals(7.2, Currencies.usdScale("¥", "CNY"), 0.001)
+        assertEquals(150.0, Currencies.usdScale("¥"), 0.001)
+    }
+
+    @Test
     fun milesConvertAndTheUsdCardStillParses() {
         val offer = OfferParser.parse(ReplayFixtures.uberUs.pkg, ReplayFixtures.uberUs.nodes)
         assertNotNull(offer)

@@ -162,11 +162,24 @@ object Currencies {
         "AUD" to 1.5, "NZD" to 1.65, "MNT" to 3400.0,
     )
 
-    /** How many units of [symbol]'s currency make a US dollar (rough). Unknown
-     *  symbols are treated as USD-scale — the same behaviour as before the
-     *  scale existed, which is the safe default for a sanity check. */
-    fun usdScale(symbol: String): Double =
-        forSymbol(symbol)?.let { PER_USD[it.code] } ?: 1.0
+    /**
+     * How many units of this amount's currency make a US dollar (rough).
+     *
+     * [code] wins when it names a currency we know: several symbols are shared
+     * ("¥" is both JPY and CNY, "kr" is SEK/NOK/DKK, "L" is MDL/ALL) and a
+     * symbol lookup takes whichever entry was declared first — which would read
+     * a ¥40 order as 40 yen and throw it away. Only the configured code says
+     * which currency the card is actually in.
+     *
+     * Unknown codes fall back to the symbol, unknown symbols to USD-scale: the
+     * safe default for a sanity check.
+     */
+    fun usdScale(symbol: String, code: String? = null): Double {
+        val entry = code?.trim()?.takeIf { it.isNotEmpty() }
+            ?.let { forCode(it.uppercase()) }
+            ?: forSymbol(symbol)
+        return entry?.let { PER_USD[it.code] } ?: 1.0
+    }
 
     /**
      * Render cents with the symbol's conventions. Unknown/custom symbols fall

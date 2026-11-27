@@ -55,6 +55,18 @@ object ReplayFixtures {
         ),
     )
 
+    /** ¥ is both yen and yuan; only the configured code says which. */
+    val cny = Fixture(
+        "Meituan — ¥40 / 10 km",
+        "com.sankuai.meituan.delivery",
+        listOf(
+            n("New order", "com.sankuai.meituan.delivery:id/title"),
+            n("¥40", "com.sankuai.meituan.delivery:id/fare"),
+            n("10 km", "com.sankuai.meituan.delivery:id/distance"),
+            n("25 min", "com.sankuai.meituan.delivery:id/time"),
+        ),
+    )
+
     /** Numbers without km/perc: the heuristics find nothing to score. */
     val bareNumbers = Fixture(
         "bare numbers, no units",

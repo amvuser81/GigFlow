@@ -316,7 +316,9 @@ class AssistScreen(
         }
 
         fun test(h: ParseHints.Hint): Pair<Boolean, String> {
-            val offer = OfferParser.parse(pkg, flat, extraRe, curSymbol, null, h)
+            val offer = OfferParser.parse(
+                pkg, flat, extraRe, curSymbol, settings.currencyCode, null, h,
+            )
                 ?: return false to "Still no offer — tap a different node."
             val parts = ArrayList<String>(3)
             parts.add(Currencies.format(offer.payoutCents, offer.currencySymbol))

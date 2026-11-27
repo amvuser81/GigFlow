@@ -205,6 +205,9 @@ object OfferParser {
         nodes: List<FlatNode>,
         extra: Regex? = null,
         extraSymbol: String = "$",
+        /** ISO code of the configured currency — disambiguates shared symbols
+         *  such as "¥" (JPY and CNY) and "kr" (SEK/NOK/DKK). */
+        currencyCode: String? = null,
         /** Optional decision trail, one line per step — surfaced in Diagnostics. */
         trace: MutableList<String>? = null,
         /** User-taught node mapping for a screen the heuristics can't read. */
@@ -213,14 +216,14 @@ object OfferParser {
         // Hints only ever apply where the heuristics fail. A screen that already
         // parses is never re-read through a taught mapping, so a wrong hint can
         // neither change nor break a result that works today.
-        val auto = parseOnce(pkg, nodes, extra, extraSymbol, trace, null)
+        val auto = parseOnce(pkg, nodes, extra, extraSymbol, currencyCode, trace, null)
         if (auto != null) {
             if (hint != null) trace?.add("hint: ignored (screen already parses)")
             return auto
         }
         if (hint == null) return null
         trace?.add("hint: heuristics missed, trying taught nodes")
-        return parseOnce(pkg, nodes, extra, extraSymbol, trace, hint)
+        return parseOnce(pkg, nodes, extra, extraSymbol, currencyCode, trace, hint)
     }
 
     private fun parseOnce(
@@ -228,6 +231,7 @@ object OfferParser {
         nodes: List<FlatNode>,
         extra: Regex?,
         extraSymbol: String,
+        currencyCode: String?,
         trace: MutableList<String>?,
         hint: ParseHints.Hint?,
     ): DetectedOffer? {
@@ -304,7 +308,9 @@ object OfferParser {
         // wrong number (or the wrong screen), not that this was a great offer.
         // Distances are km and the bounds are USD, so normalize through the
         // card's own currency first ("at 360 Ft/USD" in the trace).
-        val scale = Currencies.usdScale(currency)
+        // Only trust the configured code when the amount came through the
+        // configured symbol: a "$" card seen by a CNY user is still USD.
+        val scale = Currencies.usdScale(currency, currencyCode.takeIf { currency == extraSymbol })
         val perKm = distanceKm?.takeIf { it > 0 }?.let { payout / it / scale }
         val perHour = durationMin?.takeIf { it > 0 }?.let { payout * 60.0 / it / scale }
         val noted = if (scale != 1.0) " at %.0f %s/USD".format(scale, currency) else ""

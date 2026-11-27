@@ -202,7 +202,9 @@ class GigFlowAccessibilityService : AccessibilityService() {
         // only consulted when the heuristics return nothing (see OfferParser).
         val hint = ParseHints.forScreen(this, pkg, nodes)
         if (hint != null) decision.add("taught hint on this screen")
-        val offer = OfferParser.parse(pkg, nodes, extraRe, curSymbol, decision, hint)
+        val offer = OfferParser.parse(
+            pkg, nodes, extraRe, curSymbol, settings.currencyCode, decision, hint,
+        )
         if (offer == null) {
             // A screen with a money figure but no parse is a "miss" — the
             // card was probably there but the layout beat the heuristic.
