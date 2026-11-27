@@ -223,6 +223,16 @@ object OfferParser {
         }
         if (hint == null) return null
         trace?.add("hint: heuristics missed, trying taught nodes")
+        val legacyRoles = hint?.let { h ->
+            listOfNotNull(
+                "payout".takeIf { ParseHints.isLegacy(h.payout) },
+                "distance".takeIf { ParseHints.isLegacy(h.distance) },
+                "duration".takeIf { ParseHints.isLegacy(h.duration) },
+            )
+        }.orEmpty()
+        if (legacyRoles.isNotEmpty()) {
+            trace?.add("hint: saved mapping is out of date (${legacyRoles.joinToString("/")})")
+        }
         return parseOnce(pkg, nodes, extra, extraSymbol, currencyCode, trace, hint)
     }
 
@@ -256,8 +266,17 @@ object OfferParser {
         } ?: hint?.payoutText?.let { frag -> bestMoneyByText(nodes, frag, extra, extraSymbol) }
         // A taught payout that can't be read means the hint is stale (the app
         // renamed the node). Don't guess with the next money figure on screen.
-        if ((hint?.payout != null || hint?.payoutText != null) && taughtMoney == null) {
-            trace?.add("hint: taught payout unreadable → not an offer")
+        val hintPayout = hint?.payout
+        if ((hintPayout != null || hint?.payoutText != null) && taughtMoney == null) {
+            trace?.add(
+                when {
+                    ParseHints.isLegacy(hintPayout) ->
+                        "hint: out-of-date anchor $hintPayout → not an offer"
+                    hintPayout != null && taughtPayout == null ->
+                        "hint: its payout node is gone ($hintPayout) → not an offer"
+                    else -> "hint: taught payout unreadable → not an offer"
+                },
+            )
             return null
         }
         val payout = taughtMoney?.first?.takeIf { it > 0 }

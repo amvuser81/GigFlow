@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -249,6 +250,17 @@ class ParseReplayTest {
             "a stale payout anchor must miss rather than score the first amount",
             OfferParser.parse(pkg, nodes, hint = stale),
         )
+        assertEquals(
+            "the sheet must be able to say which part is out of date",
+            "its payout was saved before rows could be told apart",
+            ParseHints.staleReason(stale, nodes),
+        )
+        val trail = ArrayList<String>()
+        OfferParser.parse(pkg, nodes, trace = trail, hint = stale)
+        assertTrue(
+            "the report should explain the miss, got $trail",
+            trail.any { it.contains("saved mapping is out of date") },
+        )
         // With occurrences recorded, the same screen teaches correctly.
         val fresh = stale.copy(
             payout = ParseHints.anchor(nodes, 1),
@@ -258,5 +270,27 @@ class ParseReplayTest {
         val offer = OfferParser.parse(pkg, nodes, hint = fresh)
         assertNotNull(offer)
         assertEquals(360_000, offer!!.payoutCents)
+        assertNull("a fresh mapping is not out of date", ParseHints.staleReason(fresh, nodes))
+    }
+
+    @Test
+    fun staleReasonExplainsAReTargetThatLeft() {
+        val nodes = listOf(
+            OfferParser.FlatNode("3 600 Ft", "app:id/amount", Bounds(0, 0, 400, 48), false),
+        )
+        val gone = ParseHints.Hint(
+            pkg = "app.test",
+            screen = ParseHints.screenKey(nodes),
+            payout = "id:app:id/amount@4",
+        )
+        assertEquals(
+            "a mapping whose row is gone must say so",
+            "the payout it pointed at is gone from this screen",
+            ParseHints.staleReason(gone, nodes),
+        )
+        assertNull(
+            "text teaching has no node to lose",
+            ParseHints.staleReason(gone.copy(payout = null, payoutText = "Ft"), nodes),
+        )
     }
 }

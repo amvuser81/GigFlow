@@ -167,9 +167,12 @@ class AssistScreen(
             if (!first) card.addView(Sections.separator(ctx, p))
             first = false
             val snap = Diagnostics.get(ctx, pkg)
+            val stale = snap?.let { staleMapping(pkg, it) }
             val (label, tint) = when {
                 snap == null -> "Not seen yet" to p.label3
                 snap.outcome == "offer" -> "Offer scored · ${ago(snap.at)}" to p.green
+                snap.outcome == "miss" && stale != null ->
+                    "Screen missed · saved mapping out of date" to p.orange
                 snap.outcome == "miss" -> "Screen missed · ${ago(snap.at)}" to p.orange
                 else -> "Screen seen · ${ago(snap.at)}" to p.label2
             }
@@ -219,12 +222,29 @@ class AssistScreen(
                 setPadding(0, dp(ctx, 2f), 0, dp(ctx, 2f))
             })
         }
+        // A miss on a screen the user already taught is the confusing case: say
+        // that the saved mapping is the reason, and let the notice itself open
+        // the teach sheet.
+        val appPkg = watchedApps.firstOrNull { it.first == name }?.second
+        val stale = appPkg?.let { staleMapping(it, snap) }
+        if (stale != null) {
+            col.addView(TextView(ctx).apply {
+                text = "Your saved mapping is out of date: $stale. GigFlow won't guess a " +
+                    "row for it, so the screen misses — tap here to teach it again."
+                textSize = Ios.T_FOOTNOTE; setTextColor(p.orange)
+                setPadding(0, dp(ctx, 10f), 0, 0)
+                setOnClickListener {
+                    sheet.dismiss()
+                    teachSheet(name, snap)
+                }
+            })
+        }
         // Only meaningful on a miss: the parser never consults a hint when its
         // own heuristics produce an offer, so teaching a working screen would
         // be a no-op the user can't see the result of.
         if (snap.outcome == "miss" && snap.nodes.isNotEmpty()) {
             col.addView(TextView(ctx).apply {
-                text = "Teach this screen"
+                text = if (stale != null) "Re-teach this screen" else "Teach this screen"
                 textSize = Ios.T_BODY; setTypeface(typeface, Typeface.BOLD)
                 setTextColor(p.tint); gravity = android.view.Gravity.CENTER
                 setPadding(0, dp(ctx, 12f), 0, dp(ctx, 6f))
@@ -412,21 +432,33 @@ class AssistScreen(
      * consults the saved mapping when its heuristics find nothing — screens it
      * already reads are never re-parsed through it.
      */
+    /** The captured tree as parser nodes — one shape for the list, the sheet and teaching. */
+    private fun flatOf(snap: Diagnostics.Snap): List<OfferParser.FlatNode> = snap.nodes.map { n ->
+        OfferParser.FlatNode(
+            n.text,
+            n.viewId,
+            Bounds(
+                n.bounds.getOrElse(0) { 0 },
+                n.bounds.getOrElse(1) { 0 },
+                n.bounds.getOrElse(2) { 0 },
+                n.bounds.getOrElse(3) { 0 },
+            ),
+            n.clickable,
+        )
+    }
+
+    /** Why the mapping saved for this snapshot no longer fits, or null. */
+    private fun staleMapping(pkg: String, snap: Diagnostics.Snap): String? {
+        if (snap.outcome != "miss" || snap.nodes.isEmpty()) return null
+        val flat = flatOf(snap)
+        val saved = ParseHints.forKey(ctx, pkg, snap.screen)
+            ?: ParseHints.forScreen(ctx, pkg, flat)
+        return saved?.let { ParseHints.staleReason(it, flat) }
+    }
+
     private fun teachSheet(name: String, snap: Diagnostics.Snap) {
         val pkg = watchedApps.firstOrNull { it.first == name }?.second ?: return
-        val flat = snap.nodes.map { n ->
-            OfferParser.FlatNode(
-                n.text,
-                n.viewId,
-                Bounds(
-                    n.bounds.getOrElse(0) { 0 },
-                    n.bounds.getOrElse(1) { 0 },
-                    n.bounds.getOrElse(2) { 0 },
-                    n.bounds.getOrElse(3) { 0 },
-                ),
-                n.clickable,
-            )
-        }
+        val flat = flatOf(snap)
         if (flat.isEmpty()) return
         // The key captured with the snapshot wins: it was computed before the
         // 80-node cap, so it matches what a live scan produces.
@@ -508,6 +540,14 @@ class AssistScreen(
                     "nothing, so screens it already reads stay untouched.",
                 Ios.T_FOOTNOTE, p.label2, 6f,
             ))
+            val savedHere = ParseHints.forKey(ctx, pkg, screen)
+                ?: ParseHints.forScreen(ctx, pkg, flat)
+            savedHere?.let { ParseHints.staleReason(it, flat) }?.let { why ->
+                col.addView(line(
+                    "The mapping saved here is out of date: $why. Saving below replaces it.",
+                    Ios.T_FOOTNOTE, p.orange, 8f,
+                ))
+            }
 
             val chips = LinearLayout(ctx).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -595,7 +635,9 @@ class AssistScreen(
                 })
             }
 
-            if (ParseHints.forScreen(ctx, pkg, flat) != null) {
+            if (ParseHints.forKey(ctx, pkg, screen) != null ||
+                ParseHints.forScreen(ctx, pkg, flat) != null
+            ) {
                 col.addView(TextView(ctx).apply {
                     text = "Forget this screen's mapping"
                     textSize = Ios.T_FOOTNOTE

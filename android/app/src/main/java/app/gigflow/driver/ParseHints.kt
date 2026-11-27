@@ -75,6 +75,33 @@ object ParseHints {
      * with digits masked, in tree order, so a different screen — or a
      * reordered one, which would move an index anchor — keys differently.
      */
+    /** An anchor saved before the occurrence was part of it ("id:<viewId>"). */
+    fun isLegacy(anchor: String?): Boolean =
+        anchor != null && anchor.startsWith("id:") && !anchor.substring(3).contains('@')
+
+    /** The mapping saved for exactly this layout key, if any. */
+    fun forKey(ctx: Context, pkg: String, screen: String): Hint? =
+        if (screen.isBlank()) null else forApp(ctx, pkg).firstOrNull { it.screen == screen }
+
+    /**
+     * Why a saved mapping can no longer be used on [nodes], or null when it
+     * still points at real nodes. Only anchors are checked — a text pattern has
+     * no target to lose.
+     */
+    fun staleReason(hint: Hint, nodes: List<OfferParser.FlatNode>): String? {
+        val anchors = listOf(
+            "payout" to hint.payout,
+            "distance" to hint.distance,
+            "duration" to hint.duration,
+        )
+        anchors.forEach { (role, a) ->
+            if (a == null) return@forEach
+            if (isLegacy(a)) return "its $role was saved before rows could be told apart"
+            if (resolve(nodes, a) == null) return "the $role it pointed at is gone from this screen"
+        }
+        return null
+    }
+
     fun screenKey(nodes: List<OfferParser.FlatNode>): String {
         val ids = nodes.mapNotNull { it.viewId }.distinct().sorted().take(40)
         if (ids.isNotEmpty()) return "v:" + ids.joinToString(",")
