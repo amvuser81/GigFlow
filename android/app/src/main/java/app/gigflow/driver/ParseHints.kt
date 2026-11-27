@@ -58,12 +58,13 @@ object ParseHints {
         if (!anchor.startsWith("id:")) return null
         val body = anchor.substring(3)
         val at = body.lastIndexOf('@')
-        // Hints saved before the occurrence was part of the anchor keep working
-        // as "the first node with that id".
-        if (at < 0) return nodes.firstOrNull { it.viewId == body }
-        val matches = nodes.filter { it.viewId == body.substring(0, at) }
-        val n = body.substring(at + 1).toIntOrNull() ?: return matches.firstOrNull()
-        return matches.getOrNull(n)
+        // Anchors saved before the occurrence was recorded ("id:<viewId>") cannot
+        // tell rows apart. Resolving one would score whichever node happened to
+        // come first, so they are treated as stale: the hint yields nothing and
+        // the screen goes back to a miss, where it can be re-taught.
+        if (at < 0) return null
+        val n = body.substring(at + 1).toIntOrNull() ?: return null
+        return nodes.filter { it.viewId == body.substring(0, at) }.getOrNull(n)
     }
 
     private val DIGITS = Regex("""\d+(?:[.,]\d+)?""")

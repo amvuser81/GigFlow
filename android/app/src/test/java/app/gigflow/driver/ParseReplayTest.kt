@@ -96,12 +96,13 @@ class ParseReplayTest {
             "this screen is supposed to miss without a hint",
             OfferParser.parse(f.pkg, f.nodes),
         )
+        fun at(text: String) = ParseHints.anchor(f.nodes, f.nodes.indexOfFirst { it.text == text })!!
         val hint = ParseHints.Hint(
             pkg = f.pkg,
             screen = ParseHints.screenKey(f.nodes),
-            payout = "id:com.deliveroo.driver:id/amount",
-            distance = "id:com.deliveroo.driver:id/km",
-            duration = "id:com.deliveroo.driver:id/min",
+            payout = at("1 850 Ft"),
+            distance = at("12,4"),
+            duration = at("22"),
         )
         val offer = OfferParser.parse(f.pkg, f.nodes, hint = hint)
         assertNotNull("the taught mapping should read this screen", offer)
@@ -167,7 +168,7 @@ class ParseReplayTest {
         val hint = ParseHints.Hint(
             pkg = f.pkg,
             screen = ParseHints.screenKey(f.nodes),
-            payout = "id:com.deliveroo.driver:id/title",
+            payout = ParseHints.anchor(f.nodes, 0), // the "New order" title
         )
         assertNull(OfferParser.parse(f.pkg, f.nodes, hint = hint))
     }
@@ -213,9 +214,49 @@ class ParseReplayTest {
     @Test
     fun anchorsResolveToTheNodeTheyPointAt() {
         val nodes = ReplayFixtures.woltHu.nodes
-        assertEquals("1 850 Ft", ParseHints.resolve(nodes, "id:com.wolt.driver:id/payout")?.text)
+        assertEquals("1 850 Ft", ParseHints.resolve(nodes, ParseHints.anchor(nodes, 1))?.text)
         assertEquals("22 perc", ParseHints.resolve(nodes, "idx:3")?.text)
-        assertNull(ParseHints.resolve(nodes, "id:com.wolt.driver:id/gone"))
+        // Pre-fix anchors carried no occurrence and are no longer resolvable.
+        assertNull(ParseHints.resolve(nodes, "id:com.wolt.driver:id/payout"))
+        assertNull(ParseHints.resolve(nodes, "id:com.wolt.driver:id/gone@0"))
         assertNull(ParseHints.resolve(nodes, "idx:99"))
+    }
+
+    @Test
+    fun preFixAnchorsGoBackToAMissInsteadOfGuessingARow() {
+        // Two amounts share one id — the layout that made the old anchor pick a
+        // row at random. Bare numbers elsewhere keep the heuristics out, so the
+        // hint is the only thing that can produce an offer here.
+        val nodes = listOf(
+            OfferParser.FlatNode("1 200 Ft", "app:id/amount", Bounds(0, 0, 400, 48), false),
+            OfferParser.FlatNode("3 600 Ft", "app:id/amount", Bounds(0, 48, 400, 96), false),
+            OfferParser.FlatNode("12,4", "app:id/km", Bounds(0, 96, 400, 144), false),
+            OfferParser.FlatNode("25", "app:id/min", Bounds(0, 144, 400, 192), false),
+        )
+        val pkg = "app.test"
+        assertNull(
+            "an id-only anchor must not resolve to a row",
+            ParseHints.resolve(nodes, "id:app:id/amount"),
+        )
+        val stale = ParseHints.Hint(
+            pkg = pkg,
+            screen = ParseHints.screenKey(nodes),
+            payout = "id:app:id/amount",
+            distance = "id:app:id/km",
+            duration = "id:app:id/min",
+        )
+        assertNull(
+            "a stale payout anchor must miss rather than score the first amount",
+            OfferParser.parse(pkg, nodes, hint = stale),
+        )
+        // With occurrences recorded, the same screen teaches correctly.
+        val fresh = stale.copy(
+            payout = ParseHints.anchor(nodes, 1),
+            distance = ParseHints.anchor(nodes, 2),
+            duration = ParseHints.anchor(nodes, 3),
+        )
+        val offer = OfferParser.parse(pkg, nodes, hint = fresh)
+        assertNotNull(offer)
+        assertEquals(360_000, offer!!.payoutCents)
     }
 }
