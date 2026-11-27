@@ -338,7 +338,8 @@ class AssistScreen(
             col.addView(TextView(ctx).apply {
                 text = if (hasKey)
                     "Sends this screen and the app's recent reads to " + provider.label +
-                        " with your key. Nothing is saved unless the mapping it proposes parses."
+                        " with your key. Nothing is saved unless the mapping it proposes parses " +
+                        "— you see the parsed payout, distance and duration first."
                 else
                     "Needs your own API key — tap here to add one. Nothing is sent until you ask."
                 textSize = Ios.T_CAPTION; setTextColor(p.label3)

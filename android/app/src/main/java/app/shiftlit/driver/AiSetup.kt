@@ -290,6 +290,20 @@ Rules:
         )
     }
 
+    /** The parser's reading of the capture, formatted for the sheet's preview. */
+    data class OfferPreview(val payout: String, val distance: String?, val duration: String?)
+
+    fun previewOf(offer: DetectedOffer, km: Boolean): OfferPreview {
+        val unit = if (km) "km" else "mi"
+        return OfferPreview(
+            payout = Currencies.format(offer.payoutCents, offer.currencySymbol, offer.currencyCode),
+            distance = offer.distanceKm?.let {
+                "%.1f %s".format(if (km) it else it * 0.621371, unit)
+            },
+            duration = offer.durationMin?.let { "%.0f min".format(it) },
+        )
+    }
+
     /**
      * Runs one screen-fix request. Call from a background thread; the callback
      * runs on the calling thread. Never logs the key, never puts it in the URL.

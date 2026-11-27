@@ -105,6 +105,12 @@ class ScreenFixPipelineTest {
         assertEquals("Accept", offer.acceptNode?.label)
         assertNotNull("the unlabeled close button must still resolve", offer.declineNode)
         assertEquals(980, offer.declineNode!!.bounds.left)
+
+        // The preview the sheet shows before Save is this same parse, formatted.
+        val preview = AiSetup.previewOf(offer, km = false)
+        assertEquals("\$12.50", preview.payout)
+        assertEquals("4.2 mi", preview.distance)
+        assertEquals("18 min", preview.duration)
     }
 
     @Test

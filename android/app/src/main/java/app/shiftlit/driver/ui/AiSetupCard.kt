@@ -14,7 +14,7 @@ import android.widget.Toast
 import app.shiftlit.driver.AiProvider
 import app.shiftlit.driver.AiSetup
 import app.shiftlit.driver.Bounds
-import app.shiftlit.driver.Currencies
+import app.shiftlit.driver.DetectedOffer
 import app.shiftlit.driver.Diagnostics
 import app.shiftlit.driver.OfferParser
 import app.shiftlit.driver.ParseHints
@@ -307,7 +307,9 @@ private fun endpointSheet(
     sheet.show()
 }
 
-private fun ruleRow(ctx: Context, p: Palette, label: String, value: String): View =
+private fun ruleRow(
+    ctx: Context, p: Palette, label: String, value: String, valueColor: Int = p.label,
+): View =
     LinearLayout(ctx).apply {
         orientation = LinearLayout.HORIZONTAL
         setPadding(0, dp(ctx, 6f), 0, 0)
@@ -320,7 +322,7 @@ private fun ruleRow(ctx: Context, p: Palette, label: String, value: String): Vie
             text = value
             textSize = Ios.T_BODY
             setTypeface(typeface, Typeface.BOLD)
-            setTextColor(p.label)
+            setTextColor(valueColor)
         })
     }
 
@@ -408,23 +410,10 @@ fun screenFixSheet(
         return "$text  ·  node $i"
     }
 
-    fun test(h: ParseHints.Hint): Pair<Boolean, String> {
-        val offer = OfferParser.parse(
-            pkg, flat, extra, symbol, settings.currencyCode, null, h,
-            settings.distanceUnit,
-        ) ?: return false to
-            "Those nodes still don't make an offer on this capture. Nothing is saved — " +
-            "try \"Teach this screen\" instead."
-        val parts = ArrayList<String>(5)
-        parts.add(Currencies.format(offer.payoutCents, offer.currencySymbol, offer.currencyCode))
-        offer.distanceKm?.let {
-            parts.add("%.1f %s".format(if (isKm) it else it * 0.621371, unit))
-        }
-        offer.durationMin?.let { parts.add("%.0f min".format(it)) }
-        if (offer.acceptNode != null) parts.add("accept ✓")
-        if (offer.declineNode != null) parts.add("decline ✓")
-        return true to "Tested on this capture: reads as " + parts.joinToString(" · ")
-    }
+    fun test(h: ParseHints.Hint): DetectedOffer? = OfferParser.parse(
+        pkg, flat, extra, symbol, settings.currencyCode, null, h,
+        settings.distanceUnit,
+    )
 
     fun showResult(seen: AiSetup.ScreenFix) {
         resultBox.removeAllViews()
@@ -477,9 +466,44 @@ fun screenFixSheet(
             return
         }
         val h = AiSetup.hintFor(fix, pkg, screen, flat) ?: return
-        val (ok, msg) = test(h)
-        line(msg, Ios.T_FOOTNOTE, if (ok) p.green else p.orange, 10f, bold = false)
-        if (!ok) return
+        val offer = test(h)
+        if (offer == null) {
+            line(
+                "Those nodes still don't make an offer on this capture. Nothing is saved — " +
+                    "try \"Teach this screen\" instead.",
+                Ios.T_FOOTNOTE, p.orange, 10f, bold = false,
+            )
+            return
+        }
+        // The real parser's reading of that capture, shown before the mapping
+        // can be saved: the driver sees the payout, distance and duration the
+        // hint would actually produce, not just the nodes it points at.
+        val preview = AiSetup.previewOf(offer, isKm)
+        line("Parsed from this capture", Ios.T_FOOTNOTE, p.label3, 14f, bold = true)
+        val parsed = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(ctx, 14f), dp(ctx, 8f), dp(ctx, 14f), dp(ctx, 8f))
+            background = Ios.rounded(Ios.R_BUTTON, p.fill, ctx)
+        }
+        parsed.addView(ruleRow(ctx, p, "Payout", preview.payout))
+        parsed.addView(ruleRow(
+            ctx, p, "Distance", preview.distance ?: "not read",
+            if (preview.distance == null) p.orange else p.label,
+        ))
+        parsed.addView(ruleRow(
+            ctx, p, "Duration", preview.duration ?: "not read",
+            if (preview.duration == null) p.orange else p.label,
+        ))
+        resultBox.addView(parsed, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            .apply { topMargin = dp(ctx, 6f) })
+        val controls = listOfNotNull(
+            "accept ✓".takeIf { offer.acceptNode != null },
+            "decline ✓".takeIf { offer.declineNode != null },
+        )
+        if (controls.isNotEmpty()) {
+            line(controls.joinToString(" · "), Ios.T_CAPTION, p.green, 6f, bold = false)
+        }
         line(
             "Saved like a taught mapping: it applies only on this screen, and only when " +
                 "the normal parser finds nothing.",

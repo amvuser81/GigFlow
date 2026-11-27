@@ -64,8 +64,9 @@ Five tabs behind a floating frosted tab bar:
   missed screen also offers **Ask … to fix this screen**: the provider
   gets that capture plus the app's recent reads, explains the miss (including
   when the same card keeps being missed) and points at the payout, distance,
-  duration and accept/decline nodes, and the mapping is test-parsed against
-  that capture before it can be saved.
+  duration and accept/decline nodes. The mapping is test-parsed against
+  that capture, and the sheet previews the parsed payout, distance and
+  duration before it can be saved.
 - **Send a test offer** (Assistant → Automation): dry-runs score → overlay
   → voice without logging anything, so you can verify setup while parked.
 
