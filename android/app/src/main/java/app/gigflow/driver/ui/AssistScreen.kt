@@ -215,6 +215,18 @@ class AssistScreen(
                 setPadding(0, dp(ctx, 2f), 0, dp(ctx, 2f))
             })
         }
+        if (snap.nodes.isNotEmpty()) {
+            col.addView(TextView(ctx).apply {
+                text = "Teach this screen"
+                textSize = Ios.T_BODY; setTypeface(typeface, Typeface.BOLD)
+                setTextColor(p.tint); gravity = android.view.Gravity.CENTER
+                setPadding(0, dp(ctx, 12f), 0, dp(ctx, 6f))
+                setOnClickListener {
+                    sheet.dismiss()
+                    teachSheet(name, snap)
+                }
+            })
+        }
         // Share the raw node dump — [tap]/view-id markers included — so a
         // parse miss can be reported as text, not just a screenshot.
         col.addView(TextView(ctx).apply {
@@ -243,6 +255,184 @@ class AssistScreen(
             }
         })
         sheet.add(col).show()
+    }
+
+    /**
+     * Teach a mapping from the captured snapshot: point at the payout, the
+     * distance and the duration, test it against the very nodes that missed,
+     * then save.
+     *
+     * Nothing is written until the test produces an offer, and the parser only
+     * consults the saved mapping when its heuristics find nothing — screens it
+     * already reads are never re-parsed through it.
+     */
+    private fun teachSheet(name: String, snap: Diagnostics.Snap) {
+        val pkg = watchedApps.firstOrNull { it.first == name }?.second ?: return
+        val flat = snap.nodes.map { n ->
+            OfferParser.FlatNode(
+                n.text,
+                n.viewId,
+                Bounds(
+                    n.bounds.getOrElse(0) { 0 },
+                    n.bounds.getOrElse(1) { 0 },
+                    n.bounds.getOrElse(2) { 0 },
+                    n.bounds.getOrElse(3) { 0 },
+                ),
+                n.clickable,
+            )
+        }
+        if (flat.isEmpty()) return
+        val screen = ParseHints.screenKey(flat)
+        val curSymbol = settings.currencySymbol
+        val extraRe = OfferParser.extraMoney(settings.currencyCode, curSymbol)
+
+        val roles = listOf("Payout", "Distance", "Duration")
+        val picks = mutableMapOf<String, String?>(roles[0] to null, roles[1] to null, roles[2] to null)
+        var active = 0
+        var result: String? = null
+        var resultOk = false
+
+        val sheet = IosSheet(ctx, p)
+        val col = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(ctx, 20f), dp(ctx, 4f), dp(ctx, 20f), dp(ctx, 12f))
+        }
+        sheet.add(col)
+
+        fun hintFor(): ParseHints.Hint? {
+            val payout = picks["Payout"] ?: return null
+            return ParseHints.Hint(
+                pkg = pkg,
+                screen = screen,
+                payout = payout,
+                distance = picks["Distance"],
+                duration = picks["Duration"],
+            )
+        }
+
+        fun test(h: ParseHints.Hint): Pair<Boolean, String> {
+            val offer = OfferParser.parse(pkg, flat, extraRe, curSymbol, null, h)
+                ?: return false to "Still no offer — tap a different node."
+            val parts = ArrayList<String>(3)
+            parts.add(Currencies.format(offer.payoutCents, offer.currencySymbol))
+            offer.distanceKm?.let { parts.add("%.1f km".format(it)) }
+            offer.durationMin?.let { parts.add("%.0f min".format(it)) }
+            return true to "Reads as ${parts.joinToString(" · ")}"
+        }
+
+        fun line(t: String, size: Float, color: Int, top: Float, bold: Boolean = false) =
+            TextView(ctx).apply {
+                text = t
+                textSize = size
+                setTextColor(color)
+                if (bold) setTypeface(typeface, Typeface.BOLD)
+                setPadding(0, dp(ctx, top), 0, 0)
+            }
+
+        fun render() {
+            col.removeAllViews()
+            col.addView(line("Teach this screen", Ios.T_HEADLINE, p.label, 0f, bold = true))
+            col.addView(line(
+                "Tap the node holding the payout, then the distance and duration if " +
+                    "they're shown. GigFlow only uses this where the normal parser finds " +
+                    "nothing, so screens it already reads stay untouched.",
+                Ios.T_FOOTNOTE, p.label2, 6f,
+            ))
+
+            val chips = LinearLayout(ctx).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(ctx, 10f), 0, dp(ctx, 4f))
+            }
+            roles.forEachIndexed { i, role ->
+                chips.addView(TextView(ctx).apply {
+                    text = if (picks[role] != null) "$role ✓" else role
+                    textSize = Ios.T_SUBHEAD
+                    setTextColor(if (i == active) p.tint else p.label2)
+                    if (i == active) setTypeface(typeface, Typeface.BOLD)
+                    setPadding(0, dp(ctx, 4f), dp(ctx, 16f), dp(ctx, 4f))
+                    setOnClickListener { active = i; render() }
+                })
+            }
+            col.addView(chips)
+
+            flat.take(60).forEachIndexed { i, n ->
+                val anchor = ParseHints.anchor(flat, i)
+                val role = picks.entries.firstOrNull { it.value == anchor }?.key
+                col.addView(TextView(ctx).apply {
+                    text = buildString {
+                        if (role != null) append("[$role] ")
+                        append(n.text.take(80))
+                        n.viewId?.substringAfterLast('/')?.let { append("  ·  $it") }
+                    }
+                    textSize = Ios.T_FOOTNOTE
+                    setTextColor(if (role != null) p.tint else p.label)
+                    setPadding(0, dp(ctx, 5f), 0, dp(ctx, 5f))
+                    setOnClickListener {
+                        picks[roles[active]] = anchor
+                        if (active < roles.lastIndex) active++
+                        result = null
+                        render()
+                    }
+                })
+            }
+
+            col.addView(TextView(ctx).apply {
+                text = "Test this mapping"
+                textSize = Ios.T_BODY; setTypeface(typeface, Typeface.BOLD)
+                setTextColor(p.tint); gravity = android.view.Gravity.CENTER
+                setPadding(0, dp(ctx, 14f), 0, dp(ctx, 6f))
+                setOnClickListener {
+                    val h = hintFor()
+                    if (h == null) {
+                        resultOk = false
+                        result = "Pick the payout node first."
+                    } else {
+                        val (ok, msg) = test(h)
+                        resultOk = ok
+                        result = msg
+                    }
+                    render()
+                }
+            })
+
+            result?.let { r ->
+                col.addView(TextView(ctx).apply {
+                    text = r
+                    textSize = Ios.T_FOOTNOTE
+                    setTextColor(if (resultOk) p.green else p.orange)
+                    setPadding(0, 0, 0, dp(ctx, 6f))
+                })
+            }
+
+            if (resultOk) {
+                col.addView(TextView(ctx).apply {
+                    text = "Save for $name"
+                    textSize = Ios.T_BODY; setTypeface(typeface, Typeface.BOLD)
+                    setTextColor(p.green); gravity = android.view.Gravity.CENTER
+                    setPadding(0, dp(ctx, 10f), 0, dp(ctx, 4f))
+                    setOnClickListener {
+                        hintFor()?.let { ParseHints.save(ctx, it) }
+                        sheet.dismiss()
+                    }
+                })
+            }
+
+            if (ParseHints.forScreen(ctx, pkg, flat) != null) {
+                col.addView(TextView(ctx).apply {
+                    text = "Forget this screen's mapping"
+                    textSize = Ios.T_FOOTNOTE
+                    setTextColor(p.label2); gravity = android.view.Gravity.CENTER
+                    setPadding(0, dp(ctx, 10f), 0, 0)
+                    setOnClickListener {
+                        ParseHints.clear(ctx, pkg, screen)
+                        sheet.dismiss()
+                    }
+                })
+            }
+        }
+
+        render()
+        sheet.show()
     }
 
     private fun automationCard(): View {

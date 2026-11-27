@@ -74,7 +74,7 @@ class GigFlowAccessibilityService : AccessibilityService() {
      */
     fun testOffer() {
         handler.post {
-            val dead = NodeRef(android.graphics.Rect(8, 1150, 14, 1190), "test")
+            val dead = NodeRef(Bounds(8, 1150, 14, 1190), "test")
             val o = DetectedOffer(
                 appPackage = "app.gigflow.test",
                 payoutCents = (12.50 * 100).toInt(),
@@ -198,7 +198,11 @@ class GigFlowAccessibilityService : AccessibilityService() {
         val nodes = OfferParser.flatten(root)
         val decision = ArrayList<String>(8)
         decision.add("attempt=$attempt nodes=${nodes.size}")
-        val offer = OfferParser.parse(pkg, nodes, extraRe, curSymbol, decision)
+        // A taught mapping for this exact layout, if the user made one. It is
+        // only consulted when the heuristics return nothing (see OfferParser).
+        val hint = ParseHints.forScreen(this, pkg, nodes)
+        if (hint != null) decision.add("taught hint on this screen")
+        val offer = OfferParser.parse(pkg, nodes, extraRe, curSymbol, decision, hint)
         if (offer == null) {
             // A screen with a money figure but no parse is a "miss" — the
             // card was probably there but the layout beat the heuristic.

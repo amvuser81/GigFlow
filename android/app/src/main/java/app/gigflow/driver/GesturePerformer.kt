@@ -3,14 +3,13 @@ package app.gigflow.driver
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
-import android.graphics.Rect
 
 /** Performs taps inside the target app via the accessibility gesture API. */
 object GesturePerformer {
 
-    fun tap(service: AccessibilityService, bounds: Rect, done: (Boolean) -> Unit = {}) {
+    fun tap(service: AccessibilityService, bounds: Bounds, done: (Boolean) -> Unit = {}) {
         val path = Path().apply {
-            moveTo(bounds.exactCenterX(), bounds.exactCenterY())
+            moveTo(bounds.centerX().toFloat(), bounds.centerY().toFloat())
         }
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0, 60))
@@ -30,10 +29,10 @@ object GesturePerformer {
 
     /** Left→right swipe across [bounds] — Amazon Flex uses a "swipe to
      *  accept" slider where a plain tap does nothing. */
-    fun swipeRight(service: AccessibilityService, bounds: Rect, done: (Boolean) -> Unit = {}) {
+    fun swipeRight(service: AccessibilityService, bounds: Bounds, done: (Boolean) -> Unit = {}) {
         val path = Path().apply {
-            moveTo(bounds.left + bounds.width() * 0.15f, bounds.exactCenterY())
-            lineTo(bounds.right - bounds.width() * 0.10f, bounds.exactCenterY())
+            moveTo(bounds.left + bounds.width() * 0.15f, bounds.centerY().toFloat())
+            lineTo(bounds.right - bounds.width() * 0.10f, bounds.centerY().toFloat())
         }
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0, 350))

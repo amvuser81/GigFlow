@@ -52,4 +52,8 @@ android {
 dependencies {
     // FileProvider for handing the downloaded update APK to the installer.
     implementation("androidx.core:core:1.13.1")
+
+    // Test-only. The parser is plain Kotlin (see Bounds in models.kt) so its
+    // decisions can be replayed offline against captured node dumps.
+    testImplementation("junit:junit:4.13.2")
 }

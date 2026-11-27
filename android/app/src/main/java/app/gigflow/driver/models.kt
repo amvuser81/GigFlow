@@ -1,10 +1,21 @@
 package app.gigflow.driver
 
-import android.graphics.Rect
+/**
+ * Screen-space rectangle of a flattened node. Plain ints, deliberately not
+ * Rect: the parser and its replay tests have to run on the JVM, where
+ * android.* classes are stubs. Gestures build their Path straight from these.
+ */
+data class Bounds(val left: Int, val top: Int, val right: Int, val bottom: Int) {
+    fun width() = right - left
+    fun height() = bottom - top
+    fun centerX() = (left + right) / 2
+    fun centerY() = (top + bottom) / 2
+    fun contains(x: Int, y: Int) = x >= left && x < right && y >= top && y < bottom
+}
 
 /** A node from the target app's view tree we may want to tap. */
 data class NodeRef(
-    val bounds: Rect,
+    val bounds: Bounds,
     val label: String,
 )
 

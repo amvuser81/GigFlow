@@ -128,6 +128,47 @@ object Currencies {
     fun label(c: Entry) = "${c.symbol}  ·  ${c.name}"
 
     /**
+     * Rough units per US dollar, for the parser's plausibility gate only —
+     * never for display, scoring or records.
+     *
+     * A driver app quotes 1 850 Ft for 12 km; without a scale that reads as
+     * "154 per km" and the gate throws away a perfectly ordinary offer. The
+     * numbers are coarse on purpose: the gate's bounds span two orders of
+     * magnitude, so being 20% off a real exchange rate changes nothing, and
+     * staying offline beats fetching rates.
+     */
+    private val PER_USD = mapOf(
+        "USD" to 1.0, "CAD" to 1.36, "MXN" to 17.0, "BRL" to 5.0,
+        "ARS" to 950.0, "CLP" to 950.0, "COP" to 4000.0, "PEN" to 3.8,
+        "UYU" to 40.0, "PYG" to 7500.0, "BOB" to 6.9, "XCD" to 2.7,
+        "JMD" to 156.0, "TTD" to 6.8, "GTQ" to 7.8, "DOP" to 58.0,
+        "CRC" to 520.0,
+        "EUR" to 0.92, "GBP" to 0.79, "CHF" to 0.88, "HUF" to 360.0,
+        "PLN" to 4.0, "CZK" to 23.0, "RON" to 4.6, "BGN" to 1.8,
+        "RSD" to 108.0, "HRK" to 6.9, "SEK" to 10.5, "NOK" to 10.7,
+        "DKK" to 6.9, "ISK" to 138.0, "UAH" to 39.0, "RUB" to 90.0,
+        "TRY" to 34.0, "MDL" to 18.0, "MKD" to 57.0, "ALL" to 93.0,
+        "BAM" to 1.8, "GEL" to 2.7, "AMD" to 390.0, "AZN" to 1.7,
+        "KZT" to 470.0, "UZS" to 12600.0, "KGS" to 89.0,
+        "ILS" to 3.7, "AED" to 3.67, "SAR" to 3.75, "QAR" to 3.64,
+        "KWD" to 0.31, "BHD" to 0.38, "JOD" to 0.71, "LBP" to 89500.0,
+        "EGP" to 48.0, "MAD" to 10.0, "DZD" to 134.0, "TND" to 3.1,
+        "ZAR" to 18.0, "NGN" to 1500.0, "KES" to 129.0, "GHS" to 15.0,
+        "UGX" to 3700.0, "TZS" to 2600.0, "XOF" to 600.0, "XAF" to 600.0,
+        "INR" to 84.0, "PKR" to 278.0, "BDT" to 118.0, "LKR" to 295.0,
+        "NPR" to 134.0, "JPY" to 150.0, "CNY" to 7.2, "KRW" to 1350.0,
+        "HKD" to 7.8, "TWD" to 32.0, "SGD" to 1.34, "MYR" to 4.5,
+        "THB" to 34.0, "VND" to 25000.0, "PHP" to 58.0, "IDR" to 15800.0,
+        "AUD" to 1.5, "NZD" to 1.65, "MNT" to 3400.0,
+    )
+
+    /** How many units of [symbol]'s currency make a US dollar (rough). Unknown
+     *  symbols are treated as USD-scale — the same behaviour as before the
+     *  scale existed, which is the safe default for a sanity check. */
+    fun usdScale(symbol: String): Double =
+        forSymbol(symbol)?.let { PER_USD[it.code] } ?: 1.0
+
+    /**
      * Render cents with the symbol's conventions. Unknown/custom symbols fall
      * back to prefix-with-space-if-lettered ("XYZ 12.50", "€-like" 12.50x).
      */
