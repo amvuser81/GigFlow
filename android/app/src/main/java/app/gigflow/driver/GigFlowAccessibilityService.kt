@@ -25,6 +25,7 @@ class GigFlowAccessibilityService : AccessibilityService() {
     private var lastFingerprint = ""
     private var lastSeenAt = 0L
     private var lastScanAt = 0L
+    private var scanToken = 0
     private var activeOffer: ScoredOffer? = null
 
     private val handler = Handler(Looper.getMainLooper())
@@ -46,6 +47,10 @@ class GigFlowAccessibilityService : AccessibilityService() {
         /** Frames can flicker mid-animation; give an offer this long to
          *  reappear before hiding the overlay. */
         private const val MISS_GRACE_MS = 2_000L
+
+        /** Re-read delays when a screen has money but didn't parse — offer
+         *  cards animate in, so the first read can precede the text. */
+        private val RETRY_DELAYS_MS = longArrayOf(250L, 700L)
 
         /** Live instance while the service is enabled — null otherwise. */
         @Volatile var instance: GigFlowAccessibilityService? = null
@@ -160,11 +165,21 @@ class GigFlowAccessibilityService : AccessibilityService() {
         // auto-shift tracker before anything else.
         onDriverAppSeen(now)
 
+        if (now - lastScanAt < 350) return // throttle contentChanged storms
+        lastScanAt = now
+        scan(pkg, now, attempt = 0, token = ++scanToken)
+    }
+
+    /**
+     * One read of the driver app's window. [attempt] > 0 is a re-read: offer
+     * cards animate in over a few hundred ms, so parsing the first
+     * contentChanged event can run before the payout text is laid out.
+     */
+    private fun scan(pkg: String, now: Long, attempt: Int, token: Int) {
+        if (token != scanToken) return // superseded by a newer scan
         val prefs = settings.rulesFor(pkg) // per-app overrides over globals
         // Monitoring switched off while an overlay was up — tear it down.
         if (!prefs.enabled) { offerGone(); return }
-        if (now - lastScanAt < 350) return // throttle contentChanged storms
-        lastScanAt = now
 
         // Symbols beyond the built-in set (R$, ₩, KSh…) match through the
         // user's configured currency so any market parses.
@@ -181,7 +196,9 @@ class GigFlowAccessibilityService : AccessibilityService() {
         }
 
         val nodes = OfferParser.flatten(root)
-        val offer = OfferParser.parse(pkg, nodes, extraRe, curSymbol)
+        val decision = ArrayList<String>(8)
+        decision.add("attempt=$attempt nodes=${nodes.size}")
+        val offer = OfferParser.parse(pkg, nodes, extraRe, curSymbol, decision)
         if (offer == null) {
             // A screen with a money figure but no parse is a "miss" — the
             // card was probably there but the layout beat the heuristic.
@@ -190,12 +207,21 @@ class GigFlowAccessibilityService : AccessibilityService() {
                 OfferParser.moneyOf(it.text, extraRe, curSymbol) != null
             }
             Diagnostics.record(this, pkg, if (hasMoney) "miss" else "idle",
-                nodes.map { it.diag() })
+                nodes, decision)
             maybeLogCompletion(pkg, nodes, now, extraRe, curSymbol)
+            // Money on screen but nothing parsed: the card may still be
+            // animating in, so look again shortly before giving up.
+            if (hasMoney && attempt < RETRY_DELAYS_MS.size) {
+                handler.postDelayed(
+                    { scan(pkg, System.currentTimeMillis(), attempt + 1, token) },
+                    RETRY_DELAYS_MS[attempt],
+                )
+                return
+            }
             maybeOfferGone(now)
             return
         }
-        Diagnostics.record(this, pkg, "offer", nodes.map { it.diag() })
+        Diagnostics.record(this, pkg, "offer", nodes, decision)
 
         // Same card still on screen — don't rescore/re-overlay every frame.
         if (offer.fingerprint == lastFingerprint && now - lastSeenAt < 60_000) {
@@ -407,15 +433,6 @@ class GigFlowAccessibilityService : AccessibilityService() {
             reservation = o.isReservation,
             currency = o.currencySymbol,
         ))
-    }
-
-    /** "· [tap] (btn_accept) Elfogadás" — clickability and the view id are
-     *  what a parse-miss report needs: whether the app exposes real buttons
-     *  vs a tap-anywhere card, and which control we should have hit. */
-    private fun OfferParser.FlatNode.diag() = buildString {
-        if (clickable) append("[tap] ")
-        viewId?.substringAfterLast('/')?.let { append("($it) ") }
-        append(text)
     }
 
     /** Watched-package → platform key used to tag captured earnings. */

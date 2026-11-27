@@ -230,6 +230,10 @@ class AssistScreen(
                     }\n")
                     append("app=${ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName}\n\n")
                     snap.texts.forEach { append("· $it\n") }
+                    if (snap.decision.isNotEmpty()) {
+                        append("\nparser:\n")
+                        snap.decision.forEach { append("· $it\n") }
+                    }
                 }
                 val send = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"

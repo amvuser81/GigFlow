@@ -13,6 +13,13 @@ import android.view.accessibility.AccessibilityNodeInfo
  */
 object OfferParser {
 
+    // A parse that survives the heuristics can still be nonsense — a customer
+    // total read as the payout, a bonus banner read as a rate. Readings outside
+    // these ranges are treated as "couldn't read" rather than shown as a
+    // confident, wrong verdict. Wide on purpose: real offers land well inside.
+    private val PLAUSIBLE_PER_MILE = 0.15..25.0
+    private val PLAUSIBLE_PER_HOUR = 1.5..250.0
+
     // Money: symbol/code-prefixed ($12.50, €8.90) or code-suffixed (850 Ft,
     // 12,50 EUR). Drivers in Europe get Ft/kr/zł cards — $-only parsing
     // means nothing is ever detected. Deliberately case-sensitive: lowercase
@@ -193,6 +200,8 @@ object OfferParser {
         nodes: List<FlatNode>,
         extra: Regex? = null,
         extraSymbol: String = "$",
+        /** Optional decision trail, one line per step — surfaced in Diagnostics. */
+        trace: MutableList<String>? = null,
     ): DetectedOffer? {
         val texts = nodes.map { it.text }
 
@@ -202,13 +211,17 @@ object OfferParser {
         val moneyNodes = nodes.mapNotNull { n ->
             moneyOf(n.text, extra, extraSymbol)?.let { (amount, cur) -> Money(n, amount, cur, n.text) }
         }
-        if (moneyNodes.isEmpty()) return null
+        if (moneyNodes.isEmpty()) {
+            trace?.add("money=0 → not an offer")
+            return null
+        }
 
         val payout = moneyNodes
             .filter { it.amount > 0.5 && !TIP_WORD.containsMatchIn(it.raw) }
             .maxOfOrNull { it.amount } ?: return null
         val payoutMoney = moneyNodes.firstOrNull { it.amount == payout }
         val currency = payoutMoney?.currency ?: "$"
+        trace?.add("money=${moneyNodes.size} payout=${payout} from ${payoutMoney?.raw ?: "?"}")
 
         val tip = moneyNodes
             .filter { TIP_WORD.containsMatchIn(it.raw) }
@@ -241,8 +254,31 @@ object OfferParser {
             }
         }.filter { it in 1..300 }.minOrNull() // Instacart batch timers run ~4min
 
+        trace?.add("distance=$distanceKm duration=$durationMin")
+
         // Need at least payout + one of distance/duration to call it an offer.
-        if (distanceKm == null && durationMin == null) return null
+        if (distanceKm == null && durationMin == null) {
+            trace?.add("no distance and no duration → not an offer")
+            return null
+        }
+
+        // Plausibility gate — a rate that makes no sense means we picked the
+        // wrong number (or the wrong screen), not that this was a great offer.
+        val perMile = distanceKm?.takeIf { it > 0 }?.let { payout / it }
+        val perHour = durationMin?.takeIf { it > 0 }?.let { payout * 60.0 / it }
+        if ((perMile != null && perMile !in PLAUSIBLE_PER_MILE) ||
+            (perHour != null && perHour !in PLAUSIBLE_PER_HOUR)
+        ) {
+            trace?.add(
+                "implausible: per-mile=${perMile?.let { "%.2f".format(it) }} " +
+                    "per-hour=${perHour?.let { "%.1f".format(it) }} → not an offer",
+            )
+            return null
+        }
+        trace?.add(
+            "plausible: per-mile=${perMile?.let { "%.2f".format(it) }} " +
+                "per-hour=${perHour?.let { "%.1f".format(it) }}",
+        )
 
         fun nodeMatching(re: Regex, clickableOnly: Boolean): NodeRef? =
             nodes.firstOrNull { n ->
@@ -273,6 +309,8 @@ object OfferParser {
             ?: tapAnywhereAccept(payoutMoney?.node)
         val decline = nodeMatching(DECLINE_WORDS, clickableOnly = true)
             ?: nodeMatching(DECLINE_WORDS, clickableOnly = false)
+
+        trace?.add("accept=${accept?.label ?: "none"} decline=${decline?.label ?: "none"}")
 
         return DetectedOffer(
             appPackage = pkg,
