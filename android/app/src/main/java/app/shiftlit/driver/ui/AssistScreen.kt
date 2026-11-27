@@ -194,6 +194,7 @@ class AssistScreen(
             if (!first) card.addView(Sections.separator(ctx, p))
             first = false
             val snap = Diagnostics.get(ctx, pkg)
+            val history = Diagnostics.history(ctx, pkg)
             val stale = snap?.let { staleMapping(pkg, it) }
             val (label, tint) = when {
                 snap == null -> "Not seen yet" to p.label3
@@ -209,7 +210,7 @@ class AssistScreen(
                 title = name,
                 subtitle = label,
                 iconGlyph = "doc", iconTint = tint,
-                chevron = snap?.texts?.isNotEmpty() == true,
+                chevron = snap != null && (snap.texts.isNotEmpty() || history.isNotEmpty()),
             ) { snap?.let { showDiag(name, it) } })
         }
         return card
@@ -233,35 +234,18 @@ class AssistScreen(
             setPadding(dp(ctx, 20f), dp(ctx, 4f), dp(ctx, 20f), dp(ctx, 12f))
         }
         col.addView(TextView(ctx).apply {
-            text = "$name · ${snap.outcome}"
+            text = "$name · diagnostics"
             textSize = Ios.T_HEADLINE; setTypeface(typeface, Typeface.BOLD)
             setTextColor(p.label); setPadding(0, 0, 0, dp(ctx, 4f))
         })
         col.addView(TextView(ctx).apply {
-            text = if (snap.outcome == "miss")
-                "Shiftlit did not parse an offer. The full capture and parser trail are below."
-            else "Everything the assistant read on the last screen."
+            text = "Current read and the last nine captures, newest first. Every read keeps " +
+                "its full tree and parser trail; map decline from any offer below."
             textSize = Ios.T_FOOTNOTE; setTextColor(p.label2)
             setPadding(0, 0, 0, dp(ctx, 10f))
         })
-        // The history lives on its own sheet: the per-app row is already the
-        // busiest thing here, and ten full captures inline would bury the current one.
-        val histPkg = watchedApps.firstOrNull { it.first == name }?.second
-        val history = histPkg?.let { Diagnostics.history(ctx, it) }.orEmpty()
-        if (history.isNotEmpty()) {
-            col.addView(TextView(ctx).apply {
-                text = "History · last ${history.size} reads"
-                textSize = Ios.T_FOOTNOTE; setTypeface(typeface, Typeface.BOLD)
-                setTextColor(p.tint)
-                setPadding(0, 0, 0, dp(ctx, 8f))
-                setOnClickListener {
-                    sheet.dismiss()
-                    historySheet(name, history)
-                }
-            })
-        }
         col.addView(TextView(ctx).apply {
-            text = "${snap.outcome} · ${ago(snap.at)} · ${snap.nodeCount} nodes"
+            text = "Current · ${snap.outcome} · ${ago(snap.at)} · ${snap.nodeCount} nodes"
             textSize = Ios.T_FOOTNOTE; setTextColor(p.label2)
             setPadding(0, 0, 0, dp(ctx, 4f))
         })
@@ -446,79 +430,70 @@ class AssistScreen(
                 aiSettingsSheet(ctx, p, settings) { refresh() }
             }
         })
-        sheet.add(col).show()
-    }
-
-    /**
-     * The last ten reads of one app, newest first. Each entry keeps the full
-     * tree and parser trail, so a card that has already gone can still be
-     * inspected and its decline control mapped.
-     */
-    private fun historySheet(name: String, entries: List<Diagnostics.Entry>) {
-        val sheet = IosSheet(ctx, p)
-        val col = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(ctx, 20f), dp(ctx, 4f), dp(ctx, 20f), dp(ctx, 16f))
-        }
-        col.addView(TextView(ctx).apply {
-            text = "$name · history"
-            textSize = Ios.T_HEADLINE; setTypeface(typeface, Typeface.BOLD)
-            setTextColor(p.label); setPadding(0, 0, 0, dp(ctx, 4f))
-        })
-        col.addView(TextView(ctx).apply {
-            text = "Newest first. Every read keeps its full tree and parser trail; " +
-                "map decline from any offer below."
-            textSize = Ios.T_FOOTNOTE; setTextColor(p.label2)
-            setPadding(0, 0, 0, dp(ctx, 6f))
-        })
-        entries.forEach { e ->
+        // Keep the whole story in one sheet: the current read, then the nine
+        // captures before it. The newest history entry is this same read, so
+        // drop that one duplicate and show the nine older ones.
+        val histPkg = watchedApps.firstOrNull { it.first == name }?.second
+        val history = histPkg?.let { Diagnostics.history(ctx, it) }.orEmpty()
+        val earlier = (if (history.firstOrNull()?.let { sameRead(it, snap) } == true)
+            history.drop(1) else history).take(9)
+        if (earlier.isNotEmpty()) {
             col.addView(TextView(ctx).apply {
-                text = "${e.outcome} · ${ago(e.at)} · ${e.nodeCount} nodes"
+                text = "Previous reads · last ${earlier.size}"
                 textSize = Ios.T_FOOTNOTE; setTypeface(typeface, Typeface.BOLD)
-                setTextColor(
-                    when (e.outcome) {
-                        "offer" -> p.green
-                        "miss" -> p.orange
-                        else -> p.label2
-                    },
-                )
-                setPadding(0, dp(ctx, 10f), 0, dp(ctx, 2f))
+                setTextColor(p.tint)
+                setPadding(0, dp(ctx, 18f), 0, dp(ctx, 4f))
             })
-            e.decision.forEach { d ->
+            earlier.forEach { e ->
+                col.addView(Sections.separator(ctx, p))
                 col.addView(TextView(ctx).apply {
-                    text = d
-                    textSize = Ios.T_CAPTION; setTextColor(p.label2)
-                })
-            }
-            if (e.texts.isNotEmpty()) {
-                col.addView(TextView(ctx).apply {
-                    text = e.texts.joinToString(" · ")
-                    textSize = Ios.T_CAPTION; setTextColor(p.label3)
-                })
-            }
-            if (e.outcome == "offer" && e.nodes.isNotEmpty()) {
-                col.addView(TextView(ctx).apply {
-                    text = "Map decline · this offer"
+                    text = "${e.outcome} · ${ago(e.at)} · ${e.nodeCount} nodes"
                     textSize = Ios.T_FOOTNOTE; setTypeface(typeface, Typeface.BOLD)
-                    setTextColor(p.tint)
-                    setPadding(0, dp(ctx, 4f), 0, 0)
-                    setOnClickListener {
-                        sheet.dismiss()
-                        teachSheet(
-                            name,
-                            Diagnostics.Snap(
-                                at = e.at,
-                                outcome = e.outcome,
-                                texts = e.texts,
-                                nodes = e.nodes,
-                                nodeCount = e.nodeCount,
-                                screen = e.screen,
-                                decision = e.decision,
-                            ),
-                            onlyRole = "Decline",
-                        )
-                    }
+                    setTextColor(
+                        when (e.outcome) {
+                            "offer" -> p.green
+                            "miss" -> p.orange
+                            else -> p.label2
+                        },
+                    )
+                    setPadding(0, dp(ctx, 10f), 0, dp(ctx, 2f))
                 })
+                e.decision.forEach { d ->
+                    col.addView(TextView(ctx).apply {
+                        text = d
+                        textSize = Ios.T_CAPTION; setTextColor(p.label2)
+                    })
+                }
+                if (e.texts.isNotEmpty()) {
+                    col.addView(TextView(ctx).apply {
+                        text = e.texts.joinToString(" · ")
+                        textSize = Ios.T_CAPTION; setTextColor(p.label3)
+                    })
+                }
+                if (e.outcome == "offer" && e.nodes.isNotEmpty()) {
+                    col.addView(TextView(ctx).apply {
+                        text = "Map decline · this offer"
+                        textSize = Ios.T_FOOTNOTE; setTypeface(typeface, Typeface.BOLD)
+                        setTextColor(p.tint)
+                        setPadding(0, dp(ctx, 4f), 0, dp(ctx, 2f))
+                        setOnClickListener {
+                            sheet.dismiss()
+                            teachSheet(
+                                name,
+                                Diagnostics.Snap(
+                                    at = e.at,
+                                    outcome = e.outcome,
+                                    texts = e.texts,
+                                    nodes = e.nodes,
+                                    nodeCount = e.nodeCount,
+                                    screen = e.screen,
+                                    decision = e.decision,
+                                ),
+                                onlyRole = "Decline",
+                            )
+                        }
+                    })
+                }
             }
         }
         col.addView(TextView(ctx).apply {
@@ -530,6 +505,15 @@ class AssistScreen(
         })
         sheet.add(col).show()
     }
+
+    /** The top history entry is this snapshot when it was written with it. */
+    private fun sameRead(e: Diagnostics.Entry, snap: Diagnostics.Snap): Boolean =
+        kotlin.math.abs(e.at - snap.at) <= 5_000 &&
+            e.outcome == snap.outcome &&
+            e.screen == snap.screen &&
+            e.nodeCount == snap.nodeCount &&
+            e.texts == snap.texts &&
+            e.decision == snap.decision
 
     /**
      * Teach a mapping from the captured snapshot: point at the payout, the
