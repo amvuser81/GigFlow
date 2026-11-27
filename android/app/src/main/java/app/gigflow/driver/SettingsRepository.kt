@@ -155,6 +155,8 @@ class SettingsRepository(context: Context) {
         autoDecline = autoDecline,
         minPerMileCents = minPerMileCents,
         minPerHourCents = minPerHourCents,
+        // Only affects how reasons are worded, never the comparison.
+        distanceUnit = this.distanceUnit,
         minPayoutCents = minPayoutCents,
         maxDistanceKm = maxDistanceKm,
         overlaySeconds = overlaySeconds,

@@ -551,7 +551,7 @@ class GigFlowAccessibilityService : AccessibilityService() {
         Diagnostics.note(
             this, pkg,
             if (scored.reasons.isEmpty()) "rules all pass"
-            else "rules fail: ${scored.reasons.joinToString(", ")}",
+            else "rules fail: ${scored.reasons.joinToString("; ")}",
         )
 
         val loc = lastLocation()
@@ -571,7 +571,7 @@ class GigFlowAccessibilityService : AccessibilityService() {
             reservation = offer.isReservation,
             currency = offer.currencySymbol,
             currencyCode = offer.currencyCode,
-            rules = scored.reasons.joinToString(", ").ifBlank { null },
+            rules = scored.reasons.joinToString("; ").ifBlank { null },
         ))
 
         // Mystro-style voice alert for the verdict, when enabled.
@@ -747,7 +747,7 @@ class GigFlowAccessibilityService : AccessibilityService() {
     private fun recordAction(s: ScoredOffer, action: String) {
         val o = s.offer
         if (o.appPackage == "app.gigflow.test") return // test offer — don't log
-        val failed = s.reasons.joinToString(", ").ifBlank { null }
+        val failed = s.reasons.joinToString("; ").ifBlank { null }
         // Both halves of the audit: the row carries the failed rules, and the
         // trail says which action they produced. Manual actions are recorded
         // the same way so the two can be compared.
