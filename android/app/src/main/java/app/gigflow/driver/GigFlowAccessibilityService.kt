@@ -252,7 +252,9 @@ class GigFlowAccessibilityService : AccessibilityService() {
         } catch (_: Exception) { }
         rootInActiveWindow?.let {
             if (it.packageName?.toString() == pkg) {
-                lastDriverWindowId = try { activeWindow?.id ?: -1 } catch (_: Exception) { -1 }
+                // The active root has no public window id to pair with it, so
+                // the probe falls back to a whole-screen capture.
+                lastDriverWindowId = -1
                 return it
             }
             it.recycle() // non-matching roots are ours to free
