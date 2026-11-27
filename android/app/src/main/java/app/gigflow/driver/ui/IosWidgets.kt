@@ -388,17 +388,47 @@ class IosSheet(ctx: Context, private val p: Palette) {
     private val dialog = Dialog(ctx, android.R.style.Theme_Translucent_NoTitleBar)
     private val container = LinearLayout(ctx)
     private val content = LinearLayout(ctx)
+    /** Pointer y at the start of a handle drag, in screen coordinates. */
+    private var dragFrom = 0f
+
+    /** Fraction of the sheet's height a drag must cover before it dismisses. */
+    private val dragDismiss = 0.2f
 
     init {
         content.orientation = LinearLayout.VERTICAL
         container.orientation = LinearLayout.VERTICAL
-        container.addView(View(ctx).apply {
+        // The grabber looks draggable, so it is: pulling it down moves the
+        // sheet, and past a fifth of its height the sheet leaves. The strip is
+        // taller than the 5dp bar so it is actually catchable with a thumb.
+        val grab = FrameLayout(ctx)
+        grab.addView(View(ctx).apply {
             background = Ios.rounded(3f, p.sheetHandle, ctx)
-            layoutParams = LinearLayout.LayoutParams(dp(ctx, 36f), dp(ctx, 5f)).apply {
-                gravity = Gravity.CENTER_HORIZONTAL
-                topMargin = dp(ctx, 8f)
+        }, FrameLayout.LayoutParams(dp(ctx, 36f), dp(ctx, 5f), Gravity.CENTER))
+        grab.setOnTouchListener { _, ev ->
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    dragFrom = ev.rawY
+                    container.animate().cancel()
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    // Upwards does nothing: there is nowhere above the sheet
+                    // to go, and a rubber-band here would only feel broken.
+                    container.translationY = (ev.rawY - dragFrom).coerceAtLeast(0f)
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    if (container.translationY > container.height * dragDismiss) dismiss()
+                    else container.animate().translationY(0f)
+                        .setDuration(ANIM_MS).setInterpolator(EASE_OUT).start()
+                    true
+                }
+                else -> false
             }
-        })
+        }
+        container.addView(grab, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(ctx, 22f),
+        ))
                 val scroll = ScrollView(ctx).apply {
             isFillViewport = true
             addView(content, FrameLayout.LayoutParams(
