@@ -8,6 +8,7 @@ import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityWindowInfo
 import android.widget.Toast
 import org.json.JSONObject
 
@@ -32,6 +33,10 @@ class GigFlowAccessibilityService : AccessibilityService() {
     /** Live point-at-the-card teach session, if one is running. */
     private var teach: TeachOverlay? = null
     private var teachSession: TeachSession? = null
+
+    /** Last screen the teach bar was offered for, and when. */
+    private var lastMissKey = ""
+    private var lastMissAt = 0L
 
     private val handler = Handler(Looper.getMainLooper())
     private var hideRunnable: Runnable? = null
@@ -68,6 +73,12 @@ class GigFlowAccessibilityService : AccessibilityService() {
 
         /** Package name of the synthetic offer from the Assist screen. */
         private const val TEST_PKG = "app.gigflow.test"
+
+        /** Don't offer the same unreadable screen more than once per window. */
+        private const val MISS_BAR_COOLDOWN_MS = 30_000L
+
+        /** A miss bar gives up on its own, like a verdict. */
+        private const val MISS_BAR_MS = 20_000L
 
         /** Live instance while the service is enabled — null otherwise. */
         @Volatile var instance: GigFlowAccessibilityService? = null
@@ -224,6 +235,60 @@ class GigFlowAccessibilityService : AccessibilityService() {
         offerGone()
     }
 
+    /**
+     * Offer the teach bar on a screen that had money but didn't parse. A miss
+     * is where teaching matters most, and the card is only live right now —
+     * there is no other moment to point at it.
+     */
+    private fun maybeTeachBar(pkg: String, nodes: List<OfferParser.FlatNode>, now: Long) {
+        if (teachSession != null) return
+        if (activeOffer != null) return // a verdict is already on screen
+        val key = ParseHints.screenKey(nodes)
+        if (key == lastMissKey && now - lastMissAt < MISS_BAR_COOLDOWN_MS) return
+        lastMissKey = key
+        lastMissAt = now
+        overlay.showMiss(
+            onTeach = { startTeach(pkg) },
+            onDismiss = { overlay.hide() },
+        )
+        // Same lifetime rules as a verdict: gone when the app is, and never
+        // longer than the bar's own cap.
+        hideToken = "miss:$key"
+        hideRunnable?.let { handler.removeCallbacks(it) }
+        val token = hideToken
+        val r = Runnable { if (hideToken == token) overlay.hide() }
+        hideRunnable = r
+        handler.postDelayed(r, MISS_BAR_MS)
+    }
+
+    /** The money left the screen while the bar was up — a teach bar for a card
+     *  that is gone is just a floating label. */
+    private fun hideMissBar() {
+        if (!hideToken.startsWith("miss:")) return
+        hideRunnable?.let { handler.removeCallbacks(it) }
+        hideToken = ""
+        overlay.hide()
+    }
+
+    /**
+     * True when one of our own *activity* windows is in front. Our accessibility
+     * overlays report the same package name, so a plain package comparison
+     * would make every overlay event look like "the user opened GigFlow".
+     */
+    private fun ourActivityInFront(): Boolean = try {
+        val wins = windows
+        if (wins.isEmpty()) true
+        else wins.any { w ->
+            if (w.type != AccessibilityWindowInfo.TYPE_APPLICATION) return@any false
+            val root = w.root ?: return@any false
+            val ours = root.packageName?.toString() == packageName
+            root.recycle()
+            ours
+        }
+    } catch (_: Exception) {
+        true
+    }
+
     /** Last-known fix — good enough for tagging where an offer appeared. */
     private fun lastLocation(): Pair<Double, Double>? {
         if (!MileageTracker.hasLocationPermission(this)) return null
@@ -261,6 +326,16 @@ class GigFlowAccessibilityService : AccessibilityService() {
         // screen, so drop it. This is what hides the overlay when the user
         // leaves the app, opens the launcher, or switches to another app.
         if (pkg !in watched) {
+            // Our own overlays carry this package as well. Only our *activity*
+            // being in front means the user opened GigFlow; an overlay's own
+            // events must not dismiss the thing that is showing.
+            if (pkg == packageName) {
+                if (ourActivityInFront()) {
+                    endTeach()
+                    offerGone()
+                }
+                return
+            }
             // A real verdict dies with its app. The synthetic test offer is the
             // exception — it is shown while this app is in front precisely so
             // the user can watch it run, so our own events must not wipe it.
@@ -333,6 +408,7 @@ class GigFlowAccessibilityService : AccessibilityService() {
                 return
             }
             maybeOfferGone(now)
+            if (hasMoney) maybeTeachBar(pkg, nodes, now) else hideMissBar()
             return
         }
         Diagnostics.record(this, pkg, "offer", nodes, decision)

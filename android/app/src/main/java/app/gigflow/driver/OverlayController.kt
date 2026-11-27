@@ -205,6 +205,83 @@ class OverlayController(private val service: AccessibilityService) {
         }
     }
 
+    /**
+     * Compact bar for a screen GigFlow couldn't read. A miss is exactly where
+     * teaching matters most, and it is also the moment the card is still live,
+     * so this is the only reliable entry to point-at-the-card teaching for a
+     * screen the heuristics don't understand.
+     */
+    fun showMiss(onTeach: () -> Unit, onDismiss: () -> Unit) {
+        hide()
+        val density = service.resources.displayMetrics.density
+        fun Int.dp() = (this * density).toInt()
+
+        val card = LinearLayout(service).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(16.dp(), 10.dp(), 16.dp(), 12.dp())
+            background = GradientDrawable().apply {
+                cornerRadius = 14.dp().toFloat()
+                setColor(Color.parseColor("#F214191F"))
+            }
+            elevation = 8.dp().toFloat()
+        }
+        card.addView(TextView(service).apply {
+            text = "GigFlow couldn't read this card"
+            setTextColor(Color.parseColor("#F0B429"))
+            textSize = 13.5f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        })
+        card.addView(TextView(service).apply {
+            text = "Teach it what to tap — point at the payout or the button."
+            setTextColor(Color.parseColor("#D7DBE4"))
+            textSize = 12f
+            setPadding(0, 4.dp(), 0, 8.dp())
+        })
+
+        fun pill(text: String, color: Int, act: () -> Unit) = TextView(service).apply {
+            this.text = text
+            textSize = 12.5f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(Color.WHITE)
+            setPadding(14.dp(), 7.dp(), 14.dp(), 7.dp())
+            background = GradientDrawable().apply {
+                cornerRadius = 16.dp().toFloat()
+                setColor(color)
+            }
+            setOnClickListener { act() }
+        }
+        val row = LinearLayout(service).apply { orientation = LinearLayout.HORIZONTAL }
+        row.addView(pill("Teach this card", Color.parseColor("#0B8A80"), onTeach))
+        row.addView(
+            pill("Not now", Color.parseColor("#3A4150"), onDismiss),
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { marginStart = 8.dp() },
+        )
+        card.addView(row)
+
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            y = 24.dp()
+        }
+
+        try {
+            wm.addView(card, params)
+            view = card
+        } catch (_: Exception) {
+            // Overlay can fail if the service isn't fully attached yet.
+        }
+    }
+
     fun hide() {
         expiryTicker?.let { tickerHandler.removeCallbacks(it) }
         expiryTicker = null
