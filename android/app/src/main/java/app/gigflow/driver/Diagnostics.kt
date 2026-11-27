@@ -265,6 +265,27 @@ object Diagnostics {
             JSONArray()
         }
         val trimmedDecision = decision.take(HIST_DECISION)
+        fun sameDecision(o: JSONObject): Boolean {
+            val a = o.optJSONArray("decision") ?: return trimmedDecision.isEmpty()
+            if (a.length() != trimmedDecision.size) return false
+            for (i in 0 until a.length()) if (a.optString(i) != trimmedDecision[i]) return false
+            return true
+        }
+        fun sameTexts(o: JSONObject): Boolean {
+            val a = o.optJSONArray("texts") ?: return texts.isEmpty()
+            if (a.length() != minOf(texts.size, HIST_TEXTS)) return false
+            for (i in 0 until a.length()) if (a.optString(i) != texts[i]) return false
+            return true
+        }
+        // An identical read is already at the top of the list. Skipping it
+        // avoids rewriting the whole history on every animation frame.
+        val last = if (prev.length() > 0) prev.optJSONObject(0) else null
+        if (last != null &&
+            last.optString("outcome") == outcome &&
+            last.optString("screen") == screen &&
+            last.optInt("nodeCount") == nodeCount &&
+            sameTexts(last) && sameDecision(last)
+        ) return
         val entry = JSONObject()
             .put("at", System.currentTimeMillis())
             .put("outcome", outcome)
@@ -279,11 +300,8 @@ object Diagnostics {
             if (kept >= MAX_HISTORY - 1) break
             val o = prev.optJSONObject(i) ?: continue
             // The same read repeated is noise, not history.
-            val sameDecision = o.optJSONArray("decision")?.let { a ->
-                (0 until a.length()).joinToString("|") { a.optString(it) }
-            } == trimmedDecision.joinToString("|")
             if (o.optString("outcome") == outcome &&
-                o.optString("screen") == screen && sameDecision
+                o.optString("screen") == screen && sameDecision(o)
             ) continue
             out.put(o)
             kept++

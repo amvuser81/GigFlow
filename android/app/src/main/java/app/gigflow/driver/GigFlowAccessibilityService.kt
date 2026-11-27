@@ -153,12 +153,11 @@ class GigFlowAccessibilityService : AccessibilityService() {
      */
     fun startTeach(pkg: String) = handler.post {
         if (teachSession != null) return@post
-        val root = pickWindow(pkg)?.root
-        if (root == null) {
+        val nodes = pickWindow(pkg)?.nodes
+        if (nodes == null) {
             toast("Open the card first")
             return@post
         }
-        val nodes = OfferParser.flatten(root)
         if (nodes.isEmpty()) {
             toast("Couldn't read this screen")
             return@post
@@ -193,7 +192,7 @@ class GigFlowAccessibilityService : AccessibilityService() {
      */
     private fun saveTeach(session: TeachSession, hint: ParseHints.Hint): String {
         ParseHints.save(this, hint)
-        val fresh = pickWindow(hint.pkg)?.root?.let { OfferParser.flatten(it) } ?: session.nodes
+        val fresh = pickWindow(hint.pkg)?.nodes ?: session.nodes
         val extra = OfferParser.extraMoney(settings.currencyCode, settings.currencySymbol)
         val offer = OfferParser.parse(
             hint.pkg, fresh, extra, settings.currencySymbol, settings.currencyCode,
@@ -211,9 +210,11 @@ class GigFlowAccessibilityService : AccessibilityService() {
 
     /** A window we could read from, plus what it looked like when scored. */
     private data class WindowPick(
-        val root: android.view.accessibility.AccessibilityNodeInfo,
+        /** The chosen window's tree, flattened once — the parser reads this. */
+        val nodes: List<OfferParser.FlatNode>,
         val id: Int,
         val type: Int,
+        val pkg: String,
         val candidates: Int,
         val money: Int,
         val cues: Int,
@@ -232,7 +233,6 @@ class GigFlowAccessibilityService : AccessibilityService() {
         } catch (_: Exception) {
             emptyList()
         }
-        val extra = OfferParser.extraMoney(settings.currencyCode, settings.currencySymbol)
         var candidates = 0
         var found = false
         var bestId = -1
@@ -247,11 +247,10 @@ class GigFlowAccessibilityService : AccessibilityService() {
                 continue
             }
             candidates++
-            // flatten() takes ownership of the root and recycles it, so the
-            // winning root is fetched again below.
-            val s = OfferParser.scoreScreen(
-                OfferParser.flatten(r), extra, settings.currencySymbol,
-            )
+            // Labels only — no bounds, no ids, no FlatNodes. The winner is
+            // flattened once below and that tree goes straight to the parser,
+            // so a scan walks the screen twice at most for the whole package.
+            val s = OfferParser.scoreTree(r)
             if (!found || s.score > bestScore) {
                 found = true
                 bestId = w.id
@@ -268,14 +267,22 @@ class GigFlowAccessibilityService : AccessibilityService() {
                 null
             }
             if (root != null) {
-                return WindowPick(root, bestId, bestType, candidates, bestMoney, bestCues)
+                return WindowPick(
+                    OfferParser.flatten(root), bestId, bestType, pkg, candidates, bestMoney, bestCues,
+                )
             }
         }
         // The window list didn't give us one: fall back to the active root,
         // which is still worth reading even without a window id to report.
         rootInActiveWindow?.let {
             if (it.packageName?.toString() == pkg) {
-                return WindowPick(it, -1, -1, candidates, 0, 0)
+                val nodes = OfferParser.flatten(it)
+                val s = OfferParser.scoreScreen(
+                    nodes,
+                    OfferParser.extraMoney(settings.currencyCode, settings.currencySymbol),
+                    settings.currencySymbol,
+                )
+                return WindowPick(nodes, -1, -1, pkg, candidates, s.money, s.cues)
             }
             it.recycle() // non-matching roots are ours to free
         }
@@ -473,14 +480,15 @@ class GigFlowAccessibilityService : AccessibilityService() {
             return
         }
 
-        val nodes = OfferParser.flatten(pick.root)
+        val nodes = pick.nodes
         val decision = ArrayList<String>(8)
         decision.add("attempt=$attempt nodes=${nodes.size}")
         // Which window produced this read, and why it won. A promo sheet above
         // the card would show up here as the chosen window with no request
         // cues, which is exactly the silent steal this line exists to expose.
         decision.add(
-            "window id=${pick.id} type=${pick.type} money=${pick.money} cues=${pick.cues}" +
+            "window id=${pick.id} type=${pick.type} pkg=${pick.pkg} " +
+                "money=${pick.money} cues=${pick.cues}" +
                 if (pick.candidates > 1) " (best of ${pick.candidates})" else "",
         )
         if (pick.candidates > 1) decision.add(windowInventory())

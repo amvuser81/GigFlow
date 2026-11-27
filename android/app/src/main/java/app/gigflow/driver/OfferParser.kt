@@ -267,6 +267,44 @@ object OfferParser {
     }
 
     /**
+     * Cheap score of a whole window: labels only — no bounds, no view ids, no
+     * [FlatNode] list. Choosing between windows needs the score, not the tree,
+     * and the winner is flattened exactly once afterwards. The root is recycled
+     * the way [flatten] does it.
+     */
+    fun scoreTree(root: AccessibilityNodeInfo, limit: Int = 400): ScreenScore {
+        var money = 0
+        var cues = 0
+        var seen = 0
+        val stack = ArrayDeque<AccessibilityNodeInfo>()
+        stack.add(root)
+        while (stack.isNotEmpty()) {
+            val n = stack.removeFirst()
+            if (seen++ >= limit) {
+                n.recycle()
+                continue
+            }
+            val text = n.text?.toString()?.trim().orEmpty()
+            val label = if (text.isNotEmpty()) text
+            else n.contentDescription?.toString()?.trim().orEmpty()
+            if (label.isNotEmpty()) {
+                if (moneyOf(label) != null) money++
+                if (OFFER_WORDS.containsMatchIn(label) ||
+                    ACCEPT_WORDS.containsMatchIn(label) ||
+                    DECLINE_WORDS.containsMatchIn(label) ||
+                    RESERVE_ACCEPT.containsMatchIn(label) ||
+                    EXPIRY.containsMatchIn(label)
+                ) {
+                    cues++
+                }
+            }
+            for (i in 0 until n.childCount) n.getChild(i)?.let(stack::add)
+            n.recycle()
+        }
+        return ScreenScore(money, cues)
+    }
+
+    /**
      * Whether a screen that didn't parse still looks like a single offer worth
      * teaching on: request wording, a decision label, or a countdown. A wallet
      * or earnings screen has money but none of those, and a teach bar there is
