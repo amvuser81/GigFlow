@@ -244,6 +244,7 @@ class AssistScreen(
             setPadding(0, dp(ctx, 14f), 0, dp(ctx, 6f))
             setOnClickListener {
                 val pkg = watchedApps.firstOrNull { it.first == name }?.second ?: "?"
+                val report = diagReport(name, pkg, snap)
                 val mail = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
                     putExtra(Intent.EXTRA_EMAIL, arrayOf(DIAG_EMAIL))
@@ -251,13 +252,20 @@ class AssistScreen(
                         Intent.EXTRA_SUBJECT,
                         "GigFlow diagnostics — $name ($pkg) · ${snap.outcome}",
                     )
-                    putExtra(Intent.EXTRA_TEXT, diagReport(name, pkg, snap))
+                    putExtra(Intent.EXTRA_TEXT, report.body)
+                    // The same JSON as a file: mail clients wrap, reflow and
+                    // truncate body text, but never the attachment.
+                    diagAttachment(report.json, pkg)?.let {
+                        putExtra(Intent.EXTRA_STREAM, it)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
                 }
                 ctx.startActivity(Intent.createChooser(mail, "Email diagnostics to $DIAG_EMAIL"))
             }
         })
         col.addView(TextView(ctx).apply {
-            text = "Addressed to $DIAG_EMAIL — the report fills the body; just send."
+            text = "Addressed to $DIAG_EMAIL — readable dump in the body, the raw " +
+                "JSON with every node rides along as an attachment."
             textSize = Ios.T_CAPTION; setTextColor(p.label3)
             gravity = android.view.Gravity.CENTER
             setPadding(0, 0, 0, dp(ctx, 8f))
@@ -265,12 +273,14 @@ class AssistScreen(
         sheet.add(col).show()
     }
 
+    private data class DiagReport(val json: String, val body: String)
+
     /**
      * The whole capture, for a human first and a parser second: a readable
      * header, the parser's decision trail, one line per node
      * (index | text | viewId | bounds | clickable), then the same data as JSON.
      */
-    private fun diagReport(name: String, pkg: String, snap: Diagnostics.Snap): String {
+    private fun diagReport(name: String, pkg: String, snap: Diagnostics.Snap): DiagReport {
         val pi = try {
             ctx.packageManager.getPackageInfo(ctx.packageName, 0)
         } catch (_: Exception) { null }
@@ -340,7 +350,7 @@ class AssistScreen(
         }
         json.put("nodes", nodes)
 
-        return buildString {
+        val body = buildString {
             append("GigFlow diagnostics\n")
             append("driver app  ").append(name).append("  (").append(pkg).append(")\n")
             append("outcome     ").append(snap.outcome).append('\n')
@@ -373,7 +383,23 @@ class AssistScreen(
             append(json.toString(2))
             append('\n')
         }
+        return DiagReport(json.toString(2), body)
     }
+
+    /** Writes the report to cache and returns a shareable content:// URI. */
+    private fun diagAttachment(json: String, pkg: String): android.net.Uri? = try {
+        val dir = java.io.File(ctx.cacheDir, "diagnostics").apply { mkdirs() }
+        // Keep the cache tidy: only the newest few are ever useful.
+        dir.listFiles()?.sortedByDescending { it.lastModified() }?.drop(4)?.forEach { it.delete() }
+        val f = java.io.File(
+            dir,
+            "gigflow-${pkg.substringAfterLast('.')}-${System.currentTimeMillis()}.json",
+        )
+        f.writeText(json)
+        androidx.core.content.FileProvider.getUriForFile(
+            ctx, "${ctx.packageName}.fileprovider", f,
+        )
+    } catch (_: Exception) { null }
 
     /**
      * Teach a mapping from the captured snapshot: point at the payout, the

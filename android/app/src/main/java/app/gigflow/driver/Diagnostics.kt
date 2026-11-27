@@ -19,9 +19,16 @@ import org.json.JSONObject
 object Diagnostics {
 
     private const val FILE = "gigflow_diag"
-    private const val KEY = "snaps"
+    private const val KEY_PREFIX = "snap:"
+    private const val LEGACY_KEY = "snaps"
     private const val MAX_TEXTS = 60
+    /** Scored screens keep the card-sized window: the report rarely needs more. */
     private const val MAX_NODES = 80
+
+    /** A miss is what gets reported and taught, and it is written at most a few
+     *  times per screen (once per re-read), so keeping far more of the tree is
+     *  cheap there — a wider window is what makes the email useful. */
+    private const val MAX_MISS_NODES = 400
 
     // Throttle plain "idle" writes — only interesting outcomes and stale
     // snapshots get persisted, not every accessibility event.
@@ -50,12 +57,31 @@ object Diagnostics {
         val decision: List<String> = emptyList(),
     )
 
-    private fun load(ctx: Context): JSONObject = try {
-        JSONObject(
-            ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
-                .getString(KEY, "{}") ?: "{}",
-        )
-    } catch (_: Exception) { JSONObject() }
+    private fun key(pkg: String) = KEY_PREFIX + pkg
+
+    /**
+     * One key per package, not one JSON blob for every app: a miss keeps up to
+     * [MAX_MISS_NODES] nodes, and re-serializing every watched app's tree on
+     * each scan is where that would stop being cheap.
+     */
+    private fun load(ctx: Context, pkg: String): JSONObject? = try {
+        val p = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        val raw = p.getString(key(pkg), null)
+        if (raw != null) JSONObject(raw) else legacy(p)?.optJSONObject(pkg)
+    } catch (_: Exception) { null }
+
+    /** Builds before per-package keys kept everything under one "snaps" object;
+     *  split it once so an update doesn't blank the last-seen rows. */
+    private fun legacy(p: android.content.SharedPreferences): JSONObject? {
+        val raw = p.getString(LEGACY_KEY, null) ?: return null
+        val root = try { JSONObject(raw) } catch (_: Exception) { JSONObject() }
+        val edit = p.edit().remove(LEGACY_KEY)
+        root.keys().forEach { k ->
+            root.optJSONObject(k)?.let { edit.putString(key(k), it.toString()) }
+        }
+        edit.apply()
+        return root
+    }
 
     /** Text-only snapshot — used when the window itself wasn't readable. */
     fun record(ctx: Context, pkg: String, outcome: String, texts: List<String>) =
@@ -80,7 +106,7 @@ object Diagnostics {
         // signature computed later from the snapshot would rely on.
         screen = ParseHints.screenKey(nodes),
         nodeCount = nodes.size,
-        nodes = nodes.take(MAX_NODES).map { n ->
+        nodes = nodes.take(if (outcome == "miss") MAX_MISS_NODES else MAX_NODES).map { n ->
             Node(
                 text = n.text,
                 viewId = n.viewId,
@@ -102,8 +128,7 @@ object Diagnostics {
         decision: List<String>,
     ) {
         val prefs = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
-        val all = load(ctx)
-        val prev = all.optJSONObject(pkg)
+        val prev = load(ctx, pkg)
         val joined = texts.take(MAX_TEXTS).joinToString("\n")
         // Skip repeat writes: idle is throttled, and an unchanged outcome
         // with identical texts doesn't need re-persisting every frame. An
@@ -137,12 +162,11 @@ object Diagnostics {
             .put("nodeCount", nodeCount)
             .put("nodes", nodeArr)
             .put("decision", decisionArr)
-        prefs.edit().putString(KEY, all.put(pkg, o).toString()).apply()
+        prefs.edit().putString(key(pkg), o.toString()).apply()
     }
 
     fun get(ctx: Context, pkg: String): Snap? {
-        val all = load(ctx)
-        val o = all.optJSONObject(pkg) ?: return null
+        val o = load(ctx, pkg) ?: return null
         return Snap(
             at = o.optLong("at"),
             outcome = o.optString("outcome", "idle"),
@@ -170,6 +194,6 @@ object Diagnostics {
     }
 
     fun clear(ctx: Context) {
-        ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().remove(KEY).apply()
+        ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().clear().apply()
     }
 }
