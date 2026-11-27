@@ -41,10 +41,10 @@ These aren't stylistic preferences — they're product guarantees:
   code actually does.
 - **Money is integer cents; distances are kilometers.** Convert for
   display at the edge only.
-- **Privacy is a feature.** Screen content never leaves the device, and
-  there is no account or sync to add it to. Don't add telemetry, analytics
-  SDKs, or third-party calls
-  without an explicit discussion first.
+- **Privacy is a feature.** Screen content never leaves the device unless the
+  user pastes it into AI setup themselves, and there is no account or sync to
+  add it to. Don't add telemetry, analytics SDKs, or background third-party
+  calls without an explicit discussion first.
 - **Automation stays opt-in** and cancellable — auto-accept/decline must
   never become default-on.
 

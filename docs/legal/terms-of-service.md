@@ -64,6 +64,10 @@ this project's name or imply it is an official release.
 You own everything the app records. The developer never receives it. Section 1
 of the [privacy policy](privacy-policy.md) lists what is stored and where.
 
+If you use the optional AI setup, the text you paste is sent by your device to
+the AI provider you selected, under that provider's terms. The developer is not
+a party to that request and never receives the text or your key.
+
 ## 6. No professional advice
 
 Per-hour and per-distance figures, profit estimates, mileage totals and

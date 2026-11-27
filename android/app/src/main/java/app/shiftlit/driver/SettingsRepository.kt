@@ -108,6 +108,33 @@ class SettingsRepository(context: Context) {
         get() = prefs.getBoolean("auto_accept_reservations", true)
         set(v) = prefs.edit().putBoolean("auto_accept_reservations", v).apply()
 
+    // ---- Optional AI setup (bring your own key) --------------------------
+    // Kept in the same private preferences as everything else. The key is only
+    // ever sent to the provider selected here, and never through a Shiftlit
+    // server (there is none).
+
+    /** [AiProvider] name; OpenAI when never set. */
+    var aiProvider: String
+        get() = prefs.getString("ai_provider", AiProvider.OPENAI.name) ?: AiProvider.OPENAI.name
+        set(v) = prefs.edit().putString("ai_provider", v).apply()
+
+    /** The driver's own API key. Blank until they add one. */
+    var aiKey: String
+        get() = prefs.getString("ai_key", "") ?: ""
+        set(v) = prefs.edit().putString("ai_key", v.trim()).apply()
+
+    /** Model override; blank means the provider's default. */
+    var aiModel: String
+        get() = prefs.getString("ai_model", "") ?: ""
+        set(v) = prefs.edit().putString("ai_model", v.trim()).apply()
+
+    /** Base URL for [AiProvider.CUSTOM]; unused by the built-in providers. */
+    var aiBaseUrl: String
+        get() = prefs.getString("ai_base_url", "") ?: ""
+        set(v) = prefs.edit().putString("ai_base_url", v.trim()).apply()
+
+    fun aiProviderOrDefault(): AiProvider = AiProvider.from(aiProvider)
+
     // ---- Per-app rule overrides (per-service filters) ----
 
     private fun overrides(): JSONObject = try {

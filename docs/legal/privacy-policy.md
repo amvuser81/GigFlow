@@ -17,6 +17,7 @@ storage means other apps cannot read it, and it is removed when you uninstall.
 | Offer log — up to 200 scored offers: payout, distance, duration, verdict, action, the rules that failed | So you can review what was offered and why it was skipped |
 | Diagnostics — the last screen read per app plus up to 20 recent reads per app: the text on screen, the parser's decision trail, which window was used | So a parse miss can be debugged instead of guessed at |
 | Taught mappings — the screen signature and the nodes you pointed at | So a layout the parser can't read can be taught once |
+| AI setup — the provider you picked, model, endpoint, and the API key you pasted | So the optional AI rule drafting can call that provider with your key |
 | Records you create — earnings, expenses, mileage and schedules | The app's own bookkeeping |
 | GPS breadcrumbs — only while a shift is running | To compute distance for that shift |
 
@@ -36,13 +37,26 @@ storage means other apps cannot read it, and it is removed when you uninstall.
 
 ## 3. What leaves the phone
 
-There are exactly two kinds of network request, both to GitHub:
+By default there are two kinds of network request, both to GitHub:
 
 1. **Update check** — a GET to `api.github.com` for this project's latest
    release, at most once every six hours (or when you tap Check for updates).
    It contains no personal data; GitHub sees the request and your IP address
    as any web request would.
 2. **APK download** — only if you choose to install an update.
+
+There is a third kind, **only if you use the optional AI setup** and tap Ask:
+
+- The text you pasted, your current rule values, your currency and distance
+  unit, and a fixed instruction are sent over HTTPS to the provider **you**
+  chose — OpenAI, Anthropic, Google Gemini, OpenRouter, or an
+  OpenAI-compatible endpoint you typed in — using the API key **you** created.
+- The answer comes back to your phone. Shiftlit has no server: the developer
+  never sees your key, the text or the answer.
+- That provider's own privacy terms apply to the request. Don't add a key if
+  you don't want that; nothing else in the app needs one.
+- "Use the last diagnostics read" only fills the paste box locally. Nothing is
+  sent until you tap Ask, and you can edit the text first.
 
 If you tap **Send report**, the app builds a JSON file from the diagnostics
 you selected and hands it to your own email app. Nothing is uploaded by
@@ -76,6 +90,10 @@ Data is protected by Android's app sandbox. There are no server credentials to
 leak because there is no server. The app is distributed as an APK signed with
 the project's release key, and the updater verifies that it is downloading
 from the project's own GitHub releases. Details: [SECURITY.md](../../SECURITY.md).
+
+If you add an AI key, it is stored in app-private preferences (backups are
+disabled for this app), sent only to the provider you selected, and removed
+when you clear it or uninstall Shiftlit.
 
 ## 7. Your rights
 

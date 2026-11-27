@@ -53,13 +53,18 @@ Everything runs on-device. No account required, no subscription, no tracking.
   records without typing anything
 - **Diagnostics** — see exactly what the assistant last read inside each
   driver app, so parse misses are debuggable instead of silent
+- **Optional AI setup** — bring your own API key for OpenAI, Anthropic, Google
+  Gemini, OpenRouter or any OpenAI-compatible endpoint, paste an email, and
+  get rule values you can review and apply. The request goes from your phone
+  straight to the provider you chose; there is no Shiftlit server in between
 - **Audit trail** — every skipped offer carries the rule that failed and both
   numbers it compared (`payout $6.10 < $8.00 floor`), in the offer log, the
   read history and the overlay, so a bad parse is never silently a skip
 - **Self-updating** — checks GitHub Releases for a newer APK (at most once
   per 6h) and installs it through the system installer when you confirm
-- **100% local** — every record lives in on-device SQLite; the only
-  network call is the anonymous GitHub update check
+- **Local by default** — every record lives in on-device SQLite. The app
+  calls GitHub anonymously for updates; the only other network traffic is the
+  optional AI setup, which talks straight to the provider you chose
 
 ## Install
 
@@ -72,6 +77,13 @@ Setup takes under a minute — the app walks you through it in the Assist tab:
    Shiftlit see offer cards in your driver apps)
 2. **Allow location** (for automatic mileage tracking)
 3. **Allow notifications** (the shift tracker runs as a foreground service)
+
+Optionally, open **Assist → AI setup** and add your own API key (OpenAI,
+Anthropic, Google Gemini, OpenRouter or a custom OpenAI-compatible endpoint).
+Then paste an email — a rate card, a welcome mail, your own notes — and the
+provider proposes rule values you can review and apply. The request goes from
+your phone to that provider and nowhere else; nothing is sent until you tap
+Ask, and every other feature works without a key.
 
 Then open a driver app and watch the verdict card appear on offers.
 Automation is off by default — enable it in **Assist → Automation** when
@@ -194,8 +206,9 @@ docs/              legal docs (privacy, terms, cookies)
 
 ## Privacy
 
-Screen content never leaves the phone — the only network traffic is the
-anonymous update check against GitHub. Automation is
+Screen content never leaves the phone unless you paste it into AI setup
+yourself, and the only network traffic is the anonymous GitHub update check
+plus — only if you add a key — the AI provider you chose. Automation is
 opt-in and cancellable. Full details:
 [`docs/legal/privacy-policy.md`](docs/legal/privacy-policy.md).
 

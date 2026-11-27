@@ -47,6 +47,18 @@ class AssistScreen(
         c.addView(automationCard())
         c.addView(Sections.header(ctx, p, "Offer rules"))
         c.addView(rulesCard())
+        c.addView(Sections.header(ctx, p, "AI setup — optional"))
+        c.addView(aiSetupCard(
+            ctx, p, settings,
+            onChanged = { refresh() },
+            lastDiagnostics = {
+                watchedApps.mapNotNull { (name, pkg) ->
+                    Diagnostics.get(ctx, pkg)?.let { Triple(name, pkg, it) }
+                }.maxByOrNull { it.third.at }?.let { (name, pkg, snap) ->
+                    diagReport(name, pkg, snap).body
+                }
+            },
+        ))
         c.addView(Sections.header(ctx, p, "Per-app rules"))
         c.addView(perAppCard())
         c.addView(TextView(ctx).apply {
@@ -1278,13 +1290,6 @@ class AssistScreen(
             iconGlyph = "link", iconTint = p.gray,
             chevron = true,
         ) { openUrl("https://github.com/w0wzahh") })
-        card.addView(Sections.separator(ctx, p))
-        card.addView(Sections.row(ctx, p,
-            title = "Support on Ko-fi",
-            subtitle = "Buy the dev a coffee — ko-fi.com/w0wzahh",
-            iconGlyph = "heart", iconTint = p.red,
-            chevron = true,
-        ) { openUrl("https://ko-fi.com/w0wzahh") })
         return card
     }
 
