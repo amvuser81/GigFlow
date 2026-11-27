@@ -214,6 +214,22 @@ class ParseReplayTest {
     }
 
     @Test
+    fun positionAnchorsTolerateASmallShift() {
+        val taught = "pos:1000,20,1080,100"
+        val shifted = listOf(OfferParser.FlatNode("", null, Bounds(996, 24, 1076, 104), true))
+        assertEquals(
+            "a control nudged by the card's insets must still resolve",
+            shifted[0],
+            ParseHints.resolve(shifted, taught),
+        )
+        val elsewhere = listOf(OfferParser.FlatNode("", null, Bounds(0, 900, 80, 980), true))
+        assertNull(
+            "a control in another corner is not the one that was taught",
+            ParseHints.resolve(elsewhere, taught),
+        )
+    }
+
+    @Test
     fun bogusHintCannotFabricateAnOffer() {
         val f = ReplayFixtures.bareNumbers
         // The title node holds no amount, so a hint pointing at it is useless —

@@ -8,6 +8,7 @@ import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.view.accessibility.AccessibilityEvent
+import android.widget.Toast
 import org.json.JSONObject
 
 /**
@@ -27,6 +28,10 @@ class GigFlowAccessibilityService : AccessibilityService() {
     private var lastScanAt = 0L
     private var scanToken = 0
     private var activeOffer: ScoredOffer? = null
+
+    /** Live point-at-the-card teach session, if one is running. */
+    private var teach: TeachOverlay? = null
+    private var teachSession: TeachSession? = null
 
     private val handler = Handler(Looper.getMainLooper())
     private var hideRunnable: Runnable? = null
@@ -125,7 +130,70 @@ class GigFlowAccessibilityService : AccessibilityService() {
      * wait for the next accessibility event to clear the overlay and any
      * pending auto-accept tap.
      */
-    fun stopWatching() = handler.post { offerGone() }
+    fun stopWatching() = handler.post { endTeach(); offerGone() }
+
+    /**
+     * Point-at-the-card teaching: read the app's live tree, then cover the card
+     * with a full-screen overlay so each tap maps to the control under it.
+     * Unlike the Diagnostics sheet this never works from a stored snapshot.
+     */
+    fun startTeach(pkg: String) = handler.post {
+        if (teachSession != null) return@post
+        val root = appWindowRoot(pkg)
+        if (root == null) {
+            toast("Open the card first")
+            return@post
+        }
+        val nodes = OfferParser.flatten(root)
+        if (nodes.isEmpty()) {
+            toast("Couldn't read this screen")
+            return@post
+        }
+        // If the card was already dismissed there is nothing to point at, and
+        // a mapping saved here would key the wrong layout.
+        if (nodes.none { OfferParser.moneyOf(it.text) != null }) {
+            toast("No card on screen")
+            return@post
+        }
+        overlay.hide()
+        val session = TeachSession(pkg, nodes)
+        teachSession = session
+        teach = TeachOverlay(
+            service = this,
+            session = session,
+            onSave = { hint -> saveTeach(session, hint) },
+            onCancel = { endTeach() },
+        ).also { it.show() }
+    }
+
+    fun endTeach() {
+        teach?.hide()
+        teach = null
+        teachSession = null
+    }
+
+    /**
+     * Persist a session's mapping, then prove it against a fresh read: the card
+     * may have changed while the driver was pointing at it, and a hint saved
+     * against a stale tree would silently miss on the next card.
+     */
+    private fun saveTeach(session: TeachSession, hint: ParseHints.Hint): String {
+        ParseHints.save(this, hint)
+        val fresh = appWindowRoot(hint.pkg)?.let { OfferParser.flatten(it) } ?: session.nodes
+        val extra = OfferParser.extraMoney(settings.currencyCode, settings.currencySymbol)
+        val offer = OfferParser.parse(
+            hint.pkg, fresh, extra, settings.currencySymbol, settings.currencyCode,
+            null, hint, settings.distanceUnit,
+        )
+        endTeach()
+        return if (offer == null) "Saved — this screen still doesn't parse"
+        else "Saved — reads as " +
+            Currencies.format(offer.payoutCents, offer.currencySymbol, offer.currencyCode)
+    }
+
+    private fun toast(msg: String) {
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    }
 
     /**
      * Offer cards often live in a popup/dialog window that isn't the
@@ -175,7 +243,17 @@ class GigFlowAccessibilityService : AccessibilityService() {
         // service bound, so events keep arriving after it's turned off; every
         // one of them has to be inert — no scan, no shift tracking, no overlay.
         if (!settings.enabled) {
+            endTeach()
             offerGone()
+            return
+        }
+
+        // A teach session owns the screen: ignore the card's own events so the
+        // scan cannot redraw over the overlay, and end it only when another app
+        // (or a different driver app) takes the screen.
+        val teaching = teachSession
+        if (teaching != null) {
+            if (pkg != packageName && (pkg !in watched || pkg != teaching.pkg)) endTeach()
             return
         }
 
@@ -307,7 +385,7 @@ class GigFlowAccessibilityService : AccessibilityService() {
                 (settings.autoAcceptReservations || !offer.isReservation))
                 settings.autoAcceptDelaySec else 0
 
-        overlay.show(scored, autoAcceptDelay) { action ->
+        overlay.show(scored, autoAcceptDelay, onTeach = { startTeach(offer.appPackage) }) { action ->
             cancelAutoAccept()
             when (action) {
                 OverlayController.Action.ACCEPT -> offer.acceptNode?.let {
@@ -501,12 +579,14 @@ class GigFlowAccessibilityService : AccessibilityService() {
     }
 
     override fun onInterrupt() {
+        endTeach()
         offerGone()
     }
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
         // Service toggled off in Settings — tear everything down now, don't
         // wait for onDestroy or a stale `instance` would still answer the UI.
+        endTeach()
         offerGone()
         instance = null
         return super.onUnbind(intent)

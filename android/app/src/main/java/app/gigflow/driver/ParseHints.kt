@@ -67,10 +67,19 @@ object ParseHints {
         if (anchor.startsWith("pos:")) {
             val b = anchor.substring(4).split(',').map { it.toIntOrNull() ?: return null }
             if (b.size != 4) return null
-            return nodes.firstOrNull {
+            nodes.firstOrNull {
                 it.bounds.left == b[0] && it.bounds.top == b[1] &&
                     it.bounds.right == b[2] && it.bounds.bottom == b[3]
-            }
+            }?.let { return it }
+            // Insets and spacing nudge a corner control by a few pixels between
+            // cards. Accept the clickable node that still covers the taught
+            // rectangle; anything under half of it is a different control.
+            val taught = Bounds(b[0], b[1], b[2], b[3])
+            val area = (b[2] - b[0]) * (b[3] - b[1])
+            if (area <= 0) return null
+            return nodes.filter { it.clickable }
+                .maxByOrNull { overlap(it.bounds, taught) }
+                ?.takeIf { overlap(it.bounds, taught) * 2 >= area }
         }
         if (!anchor.startsWith("id:")) return null
         val body = anchor.substring(3)
@@ -128,6 +137,16 @@ object ParseHints {
             .filter { it.isNotEmpty() } // unlabeled nodes must not change the key
             .distinct().take(8)
         return "t:" + shape.joinToString("|")
+    }
+
+    /** Pixels shared by two rectangles — the tolerance measure for a `pos:`
+     *  anchor whose control shifted slightly with the card's insets. */
+    private fun overlap(a: Bounds, b: Bounds): Int {
+        val l = maxOf(a.left, b.left)
+        val t = maxOf(a.top, b.top)
+        val r = minOf(a.right, b.right)
+        val bo = minOf(a.bottom, b.bottom)
+        return if (r > l && bo > t) (r - l) * (bo - t) else 0
     }
 
     // --- Storage -------------------------------------------------------------

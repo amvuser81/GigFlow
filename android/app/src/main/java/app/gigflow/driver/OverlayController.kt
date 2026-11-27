@@ -54,7 +54,12 @@ class OverlayController(private val service: AccessibilityService) {
         countdown?.text = "Auto-accepting in ${secondsLeft}s · tap to cancel"
     }
 
-    fun show(scored: ScoredOffer, autoAcceptSec: Int = 0, onAction: (Action) -> Unit) {
+    fun show(
+        scored: ScoredOffer,
+        autoAcceptSec: Int = 0,
+        onTeach: (() -> Unit)? = null,
+        onAction: (Action) -> Unit,
+    ) {
         hide()
         val o = scored.offer
         val (bg, fgColor, label) = when (scored.verdict) {
@@ -135,6 +140,18 @@ class OverlayController(private val service: AccessibilityService) {
                 )
             }
             container.addView(row)
+        }
+
+        // Entry to point-at-the-card teaching: the card is live right now, so
+        // this is the only moment the control the driver means can be tapped.
+        onTeach?.let { teach ->
+            container.addView(TextView(service).apply {
+                text = "Teach this card"
+                setTextColor(Color.parseColor("#9AA3B2"))
+                textSize = 11.5f
+                setPadding(0, 8.dp(), 0, 0)
+                setOnClickListener { teach() }
+            })
         }
 
         // Offer's own expiry timer, if the card showed one ("0:15", "12s").
