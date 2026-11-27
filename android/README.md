@@ -102,10 +102,12 @@ misses, so the AI screen-fix preview can be tried without a live offer. Works
 whether the debug app is running or not:
 
 ```bash
-adb shell am start -n app.shiftlit.driver.debug/app.shiftlit.driver.MainActivity --ez seed_diag true
+adb shell am start -n app.shiftlit.driver.debug/app.shiftlit.driver.MainActivity --activity-single-top --ez seed_diag true
 ```
 
-Then open Assistant → Diagnostics → Wolt Courier Partner and tap
+`--activity-single-top` is what delivers the extra to the already-running
+activity; a plain start only brings its task forward. Then open Assistant →
+Diagnostics → Wolt Courier Partner and tap
 "Ask … to fix this screen". The seed only selects OpenRouter as the provider;
 the debug app still needs its own API key.
 
