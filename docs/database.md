@@ -50,7 +50,7 @@ npm run db:seed       # platform catalog
 ## Moving to PostgreSQL
 
 1. Change `provider = "postgresql"` in `prisma/schema.prisma`.
-2. Point `DATABASE_URL` at Postgres, e.g. `postgresql://user:pass@host:5432/gigflow`.
+2. Point `DATABASE_URL` at Postgres, e.g. `postgresql://user:pass@host:5432/shiftlit`.
 3. `npx prisma migrate dev` — Prisma maps `String` enums-friendly columns,
    `DateTime` → `timestamptz`, cents stay `Int`.
 4. Optionally convert constrained strings to real enums in a follow-up migration.

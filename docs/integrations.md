@@ -88,7 +88,7 @@ same class of API as Mystro — with no third-party dependencies:
   `TYPE_ACCESSIBILITY_OVERLAY` window (no `SYSTEM_ALERT_WINDOW` permission)
 - `GesturePerformer.kt` taps accept/decline via `dispatchGesture` — only when
   the user enabled the corresponding switch
-- `GigFlowApi.kt` pushes distilled offer fields (never screen content) to
+- `ShiftlitApi.kt` pushes distilled offer fields (never screen content) to
   `POST /api/mobile/offers`, authenticated by a per-user bearer token whose
   SHA-256 hash is stored on `User.mobileTokenHash`
 - Tokens are generated/revoked in Settings → Security; pushed offers land in

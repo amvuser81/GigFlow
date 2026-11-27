@@ -1,14 +1,14 @@
-# GigFlow Cookie Policy
+# Shiftlit Cookie Policy
 
 **Last updated: September 2026**
 
 ## What we use
 
-GigFlow sets exactly one cookie:
+Shiftlit sets exactly one cookie:
 
 | Cookie | Purpose | Type | Lifetime |
 |---|---|---|---|
-| `gigflow_session` | Keeps you signed in | Strictly necessary, `HttpOnly`, `SameSite=Lax`, `Secure` in production | 30 days, or until sign-out |
+| `shiftlit_session` | Keeps you signed in | Strictly necessary, `HttpOnly`, `SameSite=Lax`, `Secure` in production | 30 days, or until sign-out |
 
 ## What we do not use
 
@@ -27,4 +27,4 @@ cookie behavior changes.
 
 ## Contact
 
-<https://github.com/w0wzahh/GigFlow/issues>
+<https://github.com/amvuser81/Shiftlit/issues>

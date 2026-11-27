@@ -64,5 +64,5 @@ us a reasonable window to patch before publishing details.
 ## Supported versions
 
 Only the latest release is supported. Check
-[Releases](https://github.com/w0wzahh/GigFlow/releases) for the current
+[Releases](https://github.com/amvuser81/Shiftlit/releases) for the current
 version.

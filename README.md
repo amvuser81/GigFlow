@@ -6,7 +6,7 @@
 
 **Your shift. One decision.**
 
-A fork of [GigFlow](https://github.com/w0wzahh/GigFlow) by Emre Karaaslan (MIT), rebuilt around a driver-utility interface.
+Based on the MIT-licensed driver assistant by Emre Karaaslan (w0wzahh), rebuilt around a driver-utility interface.
 
 An open-source Android app for rideshare and delivery drivers: reads offers
 on-screen, scores them against your rules, optionally accepts or declines for
@@ -15,7 +15,7 @@ where you actually drive.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Android-8.0%2B-3DDC84)](android)
-[![Release](https://img.shields.io/github/v/release/amvuser81/GigFlow)](https://github.com/amvuser81/GigFlow/releases)
+[![Release](https://img.shields.io/github/v/release/amvuser81/Shiftlit)](https://github.com/amvuser81/Shiftlit/releases)
 [![Open Source](https://img.shields.io/badge/Open%20Source-❤-blueviolet)](https://ko-fi.com/w0wzahh)
 
 </div>
@@ -82,7 +82,7 @@ Everything runs on-device. No account required, no subscription, no tracking.
 ## Install
 
 Grab the latest APK from
-[Releases](https://github.com/amvuser81/GigFlow/releases) — Android 8.0+.
+[Releases](https://github.com/amvuser81/Shiftlit/releases) — Android 8.0+.
 
 Setup takes under a minute — the app walks you through it in the Assist tab:
 
@@ -107,9 +107,9 @@ cd android
 ## Installing and updating on a phone
 
 **First install (one time).** Every release published before the signing
-change was a debug build: package `app.gigflow.driver.debug`, signed with
+change was a debug build: package `app.shiftlit.driver.debug`, signed with
 the throwaway debug key. The signed releases are package
-`app.gigflow.driver` with the release key, so the phone treats them as a
+`app.shiftlit.driver` with the release key, so the phone treats them as a
 different app.
 
 1. On the phone, open the repo's **Releases** page and download the
@@ -166,7 +166,7 @@ place:
 Create them once:
 
 ```bash
-keytool -genkeypair -v -keystore release.jks -alias gigflow \
+keytool -genkeypair -v -keystore release.jks -alias shiftlit \
   -keyalg RSA -keysize 4096 -validity 10000
 base64 -w0 release.jks | gh secret set KEYSTORE_BASE64
 gh secret set KEYSTORE_PASSWORD

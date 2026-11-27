@@ -1,8 +1,8 @@
-# GigFlow Privacy Policy
+# Shiftlit Privacy Policy
 
 **Last updated: September 2026**
 
-GigFlow exists to help gig workers keep and understand their own work data.
+Shiftlit exists to help gig workers keep and understand their own work data.
 This policy explains what is collected, where it lives, and the control you
 have over it. The short version: **your data is yours, the app works
 locally first, and nothing is sent anywhere unless you configure it.**
@@ -83,5 +83,5 @@ notes; the "Last updated" date above reflects the current version.
 ## Contact
 
 Privacy questions or requests:
-<https://github.com/w0wzahh/GigFlow/issues> (for account-data requests,
+<https://github.com/amvuser81/Shiftlit/issues> (for account-data requests,
 include the email on the account).

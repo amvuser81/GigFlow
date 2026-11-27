@@ -3,9 +3,9 @@ plugins {
 }
 
 // Release signing is supplied by CI (see .github/workflows/build-apk.yml).
-// Without GIGFLOW_KEYSTORE the release variant builds unsigned, which is fine
+// Without SHIFTLIT_KEYSTORE the release variant builds unsigned, which is fine
 // for local experiments but must never be published.
-val releaseKeystore = System.getenv("GIGFLOW_KEYSTORE")
+val releaseKeystore = System.getenv("SHIFTLIT_KEYSTORE")
 
 android {
     namespace = "app.shiftlit.driver"
@@ -23,9 +23,9 @@ android {
         if (releaseKeystore != null) {
             create("release") {
                 storeFile = file(releaseKeystore)
-                storePassword = System.getenv("GIGFLOW_KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("GIGFLOW_KEY_ALIAS")
-                keyPassword = System.getenv("GIGFLOW_KEY_PASSWORD")
+                storePassword = System.getenv("SHIFTLIT_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("SHIFTLIT_KEY_ALIAS")
+                keyPassword = System.getenv("SHIFTLIT_KEY_PASSWORD")
             }
         }
     }

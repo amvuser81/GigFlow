@@ -1,26 +1,26 @@
-# GigFlow Terms of Service
+# Shiftlit Terms of Service
 
 **Last updated: September 2026**
 
-These Terms of Service ("Terms") govern your use of GigFlow — the web
-application and the Android companion app ("GigFlow Driver"), together the
-"Service" — operated by the maintainer of the GigFlow open-source project
+These Terms of Service ("Terms") govern your use of Shiftlit — the web
+application and the Android companion app ("Shiftlit Driver"), together the
+"Service" — operated by the maintainer of the Shiftlit open-source project
 ("we", "us"). By creating an account or installing the companion app you
 agree to these Terms. If you do not agree, do not use the Service.
 
-GigFlow is open-source software released under the MIT License. These Terms
+Shiftlit is open-source software released under the MIT License. These Terms
 apply to the hosted service and to use of the distributed companion app;
 they do not limit the rights the MIT License grants you over the source
 code itself.
 
-## 1. What GigFlow is
+## 1. What Shiftlit is
 
-GigFlow is a workspace for rideshare and delivery workers. It lets you
+Shiftlit is a workspace for rideshare and delivery workers. It lets you
 record earnings, expenses, and mileage; evaluate work offers against rules
 you define; plan your schedule; and review analytics derived from your own
 data.
 
-GigFlow is an **independent project**. It is not affiliated with, endorsed
+Shiftlit is an **independent project**. It is not affiliated with, endorsed
 by, sponsored by, or partnered with Uber, Lyft, DoorDash, Wolt, foodora,
 Instacart, Amazon, Walmart, or any other platform referenced by the
 Service. All platform names are trademarks of their respective owners and
@@ -36,7 +36,7 @@ are used only to identify compatibility.
 
 ## 3. Third-party platforms — important
 
-**GigFlow is a read-and-record tool, not a source of work.** It does not
+**Shiftlit is a read-and-record tool, not a source of work.** It does not
 give you access to any platform, does not guarantee offers, and cannot
 affect your standing with any platform.
 
@@ -86,7 +86,7 @@ you configure sync with a personal API token.
 
 Metrics such as per-hour and per-distance earnings, profit estimates,
 mileage totals, and insights are informational calculations derived from
-your data. GigFlow is **not** tax, accounting, financial, or legal advice,
+your data. Shiftlit is **not** tax, accounting, financial, or legal advice,
 and mileage figures are estimates — keep your own records for tax and
 reimbursement purposes.
 
@@ -127,5 +127,5 @@ have (including under EU and UK law) are unaffected.
 ## Contact
 
 Questions about these Terms: open an issue at
-<https://github.com/w0wzahh/GigFlow/issues> or reach the maintainer via
+<https://github.com/amvuser81/Shiftlit/issues> or reach the maintainer via
 the GitHub repository.

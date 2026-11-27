@@ -910,13 +910,13 @@ class AssistScreen(
             title = "Privacy policy",
             iconGlyph = "doc", iconTint = p.tint,
             chevron = true,
-        ) { openUrl("https://github.com/w0wzahh/GigFlow/blob/master/docs/legal/privacy-policy.md") })
+        ) { openUrl("https://github.com/amvuser81/Shiftlit/blob/master/docs/legal/privacy-policy.md") })
         card.addView(Sections.separator(ctx, p))
         card.addView(Sections.row(ctx, p,
             title = "Terms of service",
             iconGlyph = "doc", iconTint = p.tint,
             chevron = true,
-        ) { openUrl("https://github.com/w0wzahh/GigFlow/blob/master/docs/legal/terms-of-service.md") })
+        ) { openUrl("https://github.com/amvuser81/Shiftlit/blob/master/docs/legal/terms-of-service.md") })
         card.addView(Sections.separator(ctx, p))
         card.addView(Sections.row(ctx, p,
             title = "Check for updates",

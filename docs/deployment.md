@@ -12,7 +12,7 @@
 |---|---|---|
 | `DATABASE_URL` | yes | Postgres connection string |
 | `APP_SECRET` | yes | 32+ random bytes, hex — encrypts integration credentials |
-| `APP_URL` | yes | e.g. `https://app.gigflow.app` — used in emails + origin checks |
+| `APP_URL` | yes | e.g. `https://app.shiftlit.app` — used in emails + origin checks |
 | `SMTP_URL` | prod | wire into `src/lib/auth/mailer.ts` |
 
 Never commit secrets. `.env*` is gitignored; configure via your host's env UI.

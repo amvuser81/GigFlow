@@ -152,10 +152,10 @@ jobs:
       - name: Build signed Release APK
         working-directory: android
         env:
-          GIGFLOW_KEYSTORE: ${{ runner.temp }}/release.jks
-          GIGFLOW_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          GIGFLOW_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          GIGFLOW_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          SHIFTLIT_KEYSTORE: ${{ runner.temp }}/release.jks
+          SHIFTLIT_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          SHIFTLIT_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          SHIFTLIT_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           set -o pipefail
           LOG="$RUNNER_TEMP/gradle-build.log"
@@ -174,7 +174,7 @@ jobs:
 
       - name: Verify signature
         env:
-          # SHA-256 of the release key inside release.jks (alias "gigflow").
+          # SHA-256 of the release key inside release.jks (alias from KEY_ALIAS).
           # This is pinned on purpose: re-keying silently breaks in-place
           # updates for every installed copy, so a changed key must be a
           # deliberate, reviewed edit to this line — never an accident.
@@ -202,7 +202,7 @@ jobs:
 
       - name: Assert APK identity
         env:
-          EXPECTED_PACKAGE: app.gigflow.driver
+          EXPECTED_PACKAGE: app.shiftlit.driver
           EXPECTED_CODE: ${{ steps.ver.outputs.code }}
           EXPECTED_VERSION: ${{ steps.ver.outputs.version }}
         run: |

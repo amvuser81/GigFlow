@@ -26,7 +26,7 @@ import java.util.concurrent.Executors
  */
 object UpdateChecker {
 
-    private const val REPO = "amvuser81/GigFlow"
+    private const val REPO = "amvuser81/Shiftlit"
     private const val API = "https://api.github.com/repos/$REPO/releases/latest"
     private const val APK_NAME_PREFIX = "shiftlit-"
     private val io = Executors.newSingleThreadExecutor()

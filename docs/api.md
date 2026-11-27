@@ -1,6 +1,6 @@
 # API Reference
 
-Base: `/api/*`. Auth via `gigflow_session` cookie. Success → `{ data: ... }`;
+Base: `/api/*`. Auth via `shiftlit_session` cookie. Success → `{ data: ... }`;
 failure → `{ error: { code, message } }` with the appropriate status.
 
 ## Auth (public, rate-limited)
