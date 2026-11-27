@@ -53,7 +53,7 @@ class TrackScreen(
         buildForm(card)
         c.addView(card)
 
-        // Automatic shift tracking — Gridwise-style: start a shift, drive in
+        // Automatic shift tracking: start a shift, drive in
         // any app, GPS accumulates km and saves one mileage record on stop.
         c.addView(Sections.header(ctx, p, "Shift tracking"))
         val shiftCard = Sections.card(ctx, p)

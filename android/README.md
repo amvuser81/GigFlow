@@ -23,7 +23,7 @@ Five tabs behind a floating frosted tab bar:
   Auto-decline switches (both automation switches off by default), offer
   rules, and diagnostics.
 
-## The assistant (Mystro-style, honest version)
+## The assistant (honest version)
 
 - Watches the offer screens of the driver apps you choose (Uber Driver,
   Lyft Driver, Dasher, Instacart Shopper, Amazon Flex, Spark Driver, Wolt

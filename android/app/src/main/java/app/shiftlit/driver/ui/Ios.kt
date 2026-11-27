@@ -8,9 +8,10 @@ import android.view.View
 import android.view.animation.Interpolator
 
 /**
- * iOS-inspired design tokens for the companion app. Mirrors Apple's system
- * palette (light + dark), type scale, radii, and motion curves — hand-rolled
- * on plain Android views, no dependencies.
+ * Design tokens for the app: the "Instrument" palette — ink-black surfaces,
+ * hairline rules, one orange accent, tabular numerals. Dark only, on purpose:
+ * it reads as one instrument panel rather than a themed clone. Hand-rolled on
+ * plain Android views, no dependencies.
  */
 object Ios {
 
@@ -50,7 +51,9 @@ object Ios {
     }
 
     // --- Palette -------------------------------------------------------------
-    class Palette(val isDark: Boolean) {
+    class Palette(val isDark: Boolean = true) {
+        /** The app ships dark-only; kept explicit so callers never guess. */
+        val dark = true
         val bg: Int
         val groupedBg: Int // background behind grouped lists
         val card: Int      // secondarySystemGroupedBackground
@@ -69,41 +72,23 @@ object Ios {
         val sheetHandle: Int
 
         init {
-            if (isDark) {
-                bg = Color.parseColor("#000000")
-                groupedBg = Color.parseColor("#000000")
-                card = Color.parseColor("#1C1C1E")
-                card2 = Color.parseColor("#2C2C2E")
-                fill = Color.parseColor("#3A3A3C")
-                label = Color.parseColor("#FFFFFF")
-                label2 = Color.parseColor("#99EBEBF5")
-                label3 = Color.parseColor("#4DEBEBF5")
-                separator = Color.parseColor("#545458")
-                tint = Color.parseColor("#0A84FF")
-                green = Color.parseColor("#30D158")
-                red = Color.parseColor("#FF453A")
-                orange = Color.parseColor("#FF9F0A")
-                yellow = Color.parseColor("#FFD60A")
-                gray = Color.parseColor("#8E8E93")
-                sheetHandle = Color.parseColor("#5A5A5E")
-            } else {
-                bg = Color.parseColor("#FFFFFF")
-                groupedBg = Color.parseColor("#F2F2F7")
-                card = Color.parseColor("#FFFFFF")
-                card2 = Color.parseColor("#F2F2F7")
-                fill = Color.parseColor("#E9E9EB")
-                label = Color.parseColor("#000000")
-                label2 = Color.parseColor("#993C3C43")
-                label3 = Color.parseColor("#4D3C3C43")
-                separator = Color.parseColor("#3C3C4360")
-                tint = Color.parseColor("#007AFF")
-                green = Color.parseColor("#34C759")
-                red = Color.parseColor("#FF3B30")
-                orange = Color.parseColor("#FF9500")
-                yellow = Color.parseColor("#FFCC00")
-                gray = Color.parseColor("#8E8E93")
-                sheetHandle = Color.parseColor("#C5C5C9")
-            }
+            // Instrument tokens. Same values in light and dark system mode.
+            bg = Color.parseColor("#0A0A0B")
+            groupedBg = Color.parseColor("#0A0A0B")
+            card = Color.parseColor("#141416")
+            card2 = Color.parseColor("#1B1B1E")
+            fill = Color.parseColor("#202024")
+            label = Color.parseColor("#F2F2F4")
+            label2 = Color.parseColor("#B4B4BA")
+            label3 = Color.parseColor("#8D8D93")
+            separator = Color.parseColor("#26262A")
+            tint = Color.parseColor("#FF7A1A")
+            green = Color.parseColor("#3DDC84")
+            red = Color.parseColor("#FF5A4A")
+            orange = Color.parseColor("#FF7A1A")
+            yellow = Color.parseColor("#FFB020")
+            gray = Color.parseColor("#8D8D93")
+            sheetHandle = Color.parseColor("#3A3A40")
         }
     }
 
@@ -118,10 +103,10 @@ object Ios {
     fun dp(ctx: Context, v: Float) = (v * ctx.resources.displayMetrics.density).toInt()
     fun sp(ctx: Context, v: Float) = v * ctx.resources.displayMetrics.scaledDensity
 
-    const val R_CARD = 13f   // iOS grouped card
-    const val R_PILL = 20f
-    const val R_BUTTON = 12f
-    const val R_SHEET = 14f
+    const val R_CARD = 10f   // panel, 1px hairline
+    const val R_PILL = 14f
+    const val R_BUTTON = 10f
+    const val R_SHEET = 12f
 
     // Type scale (sp) — Apple's text styles
     const val T_LARGE = 34f
@@ -148,6 +133,7 @@ object Ios {
     fun cardBg(p: Palette, ctx: Context) = GradientDrawable().apply {
         cornerRadius = dp(ctx, R_CARD).toFloat()
         setColor(p.card)
+        setStroke(dp(ctx, 1f).coerceAtLeast(1), p.separator)
     }
 
     /** Currency-aware money render — placement/decimals come from the

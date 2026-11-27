@@ -91,7 +91,7 @@ class DashboardScreen(
         return card
     }
 
-    /** Mystro-style share: today's numbers as plain text via the share sheet. */
+    /** Share today's numbers as plain text via the share sheet. */
     private fun shareRow(): View {
         val card = Sections.card(ctx, p)
         card.addView(Sections.row(ctx, p,

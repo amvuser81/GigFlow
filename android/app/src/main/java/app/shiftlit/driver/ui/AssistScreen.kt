@@ -142,7 +142,7 @@ class AssistScreen(
         return card
     }
 
-    /** Guided setup — Mystro's biggest UX lesson: the app does *nothing*
+    /** Guided setup — The biggest UX lesson: the app does *nothing*
      *  until the accessibility service is on, so surface that loudly. */
     private fun setupCard(): View {
         val serviceOn = OverlayController.isServiceEnabled(ctx)
@@ -809,7 +809,7 @@ class AssistScreen(
         card.addView(r5); card.addView(Sections.separator(ctx, p))
         card.addView(r6)
 
-        // Auto-accept countdown — Mystro's 5-second window, cancellable.
+        // Auto-accept countdown — a short, cancellable window.
         card.addView(Sections.separator(ctx, p))
         card.addView(Sections.row(ctx, p,
             title = "Auto-accept countdown",
@@ -1008,7 +1008,7 @@ class AssistScreen(
         "foodora rider" to "com.logistics.rider.foodora",
     )
 
-    /** Mystro-style per-service filters — one row per watched app. */
+    /** Per-service filters — one row per watched app. */
     private fun perAppCard(): View {
         val card = Sections.card(ctx, p)
         watchedApps.forEachIndexed { i, (name, pkg) ->

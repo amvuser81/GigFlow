@@ -79,7 +79,7 @@ class SettingsRepository(context: Context) {
         get() = prefs.getBoolean("haptics", true)
         set(v) = prefs.edit().putBoolean("haptics", v).apply()
 
-    /** Speak offer verdicts aloud — Mystro-style voice alerts. */
+    /** Speak offer verdicts aloud — optional voice alerts. */
     var voiceAlerts: Boolean
         get() = prefs.getBoolean("voice_alerts", false)
         set(v) = prefs.edit().putBoolean("voice_alerts", v).apply()
@@ -108,7 +108,7 @@ class SettingsRepository(context: Context) {
         get() = prefs.getBoolean("auto_accept_reservations", true)
         set(v) = prefs.edit().putBoolean("auto_accept_reservations", v).apply()
 
-    // ---- Per-app rule overrides (Mystro's per-service filters) ----
+    // ---- Per-app rule overrides (per-service filters) ----
 
     private fun overrides(): JSONObject = try {
         JSONObject(prefs.getString("platform_rules", "{}") ?: "{}")

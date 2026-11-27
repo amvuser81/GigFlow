@@ -1,12 +1,12 @@
 <div align="center">
 
-<img src="icon.png" width="128" height="128" alt="Shiftlit" />
+<img src="docs/brand/lockup.png" width="380" alt="Shiftlit" />
 
 # Shiftlit
 
 **Your shift. One decision.**
 
-Based on the MIT-licensed driver assistant by Emre Karaaslan (w0wzahh), rebuilt around a driver-utility interface.
+Based on the MIT-licensed driver assistant by Emre Karaaslan (w0wzahh).
 
 An open-source Android app for rideshare and delivery drivers: reads offers
 on-screen, scores them against your rules, optionally accepts or declines for
@@ -23,8 +23,7 @@ where you actually drive.
 
 ## What it is
 
-Shiftlit is a **free, open-source alternative to paid driver-assistant
-apps** like Mystro. It uses Android's accessibility APIs — the same approach
+Shiftlit is a **free, open-source driver assistant**. It uses Android's accessibility APIs — the same approach
 the paid apps use — to watch the driver apps you choose, read each offer card
 as it appears, score it against thresholds you set, and show a floating
 verdict. Enable automation and it can accept the good ones (on a cancellable

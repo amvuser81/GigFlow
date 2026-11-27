@@ -106,7 +106,7 @@ class IosSegmented(
 
     private val cells = mutableListOf<TextView>()
     private val thumbBg by lazy {
-        Ios.rounded(7.5f, if (p.label == Color.WHITE) Color.parseColor("#636366") else Color.WHITE, context)
+        Ios.rounded(7.5f, if (p.dark) Color.parseColor("#2A2A2F") else Color.WHITE, context)
     }
 
     init {
@@ -529,8 +529,8 @@ class TabBar(ctx: Context, private val p: Palette) : FrameLayout(ctx) {
         val bar = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             background = Ios.stroke(28f,
-                if (p.label == Color.WHITE) Color.parseColor("#D91C1C1E") else Color.parseColor("#D9FFFFFF"),
-                Color.argb(40, 120, 120, 128), ctx)
+                Color.parseColor("#F2141416"),
+                p.separator, ctx)
             elevation = dp(ctx, 12f).toFloat()
             setPadding(dp(ctx, 6f), dp(ctx, 6f), dp(ctx, 6f), dp(ctx, 6f))
         }

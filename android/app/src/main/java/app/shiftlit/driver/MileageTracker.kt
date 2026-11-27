@@ -16,7 +16,7 @@ import android.os.IBinder
 import org.json.JSONObject
 
 /**
- * Shift mileage tracker — Gridwise-style on/off tracking. Started from the
+ * Shift mileage tracker — on/off tracking. Started from the
  * Track tab, runs as a location-type foreground service so it keeps working
  * while the driver is in a driver app. GPS fixes accumulate distance locally.
  *

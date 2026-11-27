@@ -495,7 +495,7 @@ object OfferParser {
             ?: texts.mapNotNull { durationOf(it) }
                 .filter { it in 1.0..600.0 }.maxOrNull()
 
-        // Expiry countdown — "0:15" / "12s" style, Mystro shows it ticking.
+        // Expiry countdown — "0:15" / "12s" style, the platform ticks it down.
         val expiresInSec = texts.mapNotNull { t ->
             EXPIRY.find(t.trim())?.let { m ->
                 val mm = m.groupValues[1].toIntOrNull()

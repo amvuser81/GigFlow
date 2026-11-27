@@ -574,7 +574,7 @@ class ShiftlitAccessibilityService : AccessibilityService() {
             rules = scored.reasons.joinToString("; ").ifBlank { null },
         ))
 
-        // Mystro-style voice alert for the verdict, when enabled.
+        // Voice alert for the verdict, when enabled.
         if (settings.voiceAlerts) {
             val label = if (scored.verdict == Verdict.GOOD) "Good offer" else "Skip it"
             tts?.speak(
@@ -620,7 +620,7 @@ class ShiftlitAccessibilityService : AccessibilityService() {
 
         // Automation: only when the user explicitly enabled it, and only when
         // we actually found the button's bounds. Auto-accept runs on the
-        // configured countdown (like Mystro's) so the driver can cancel.
+        // configured countdown so the driver can cancel.
         if (autoAcceptDelay > 0) {
             scheduleAutoAccept(scored, offer.acceptNode!!, autoAcceptDelay)
         } else if (prefs.autoDecline && scored.verdict == Verdict.BAD) {

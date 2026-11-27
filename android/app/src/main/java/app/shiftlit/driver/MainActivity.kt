@@ -73,6 +73,15 @@ class MainActivity : Activity() {
         // Keep the status bar and phone navigation bar visible at all times.
         window.statusBarColor = p.groupedBg
         window.navigationBarColor = p.groupedBg
+        // Light icons on the ink surface (the light theme would draw dark
+        // ones on a near-black bar).
+        if (Build.VERSION.SDK_INT >= 30) {
+            window.insetsController?.setSystemBarsAppearance(
+                0,
+                android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
+                    android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
+            )
+        }
         if (Build.VERSION.SDK_INT >= 30) {
             window.setDecorFitsSystemWindows(false)
             window.insetsController?.show(

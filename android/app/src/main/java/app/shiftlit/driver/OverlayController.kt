@@ -63,8 +63,8 @@ class OverlayController(private val service: AccessibilityService) {
         hide()
         val o = scored.offer
         val (bg, fgColor, label) = when (scored.verdict) {
-            Verdict.GOOD -> Triple(Color.parseColor("#16915A"), Color.WHITE, "GOOD OFFER")
-            Verdict.BAD -> Triple(Color.parseColor("#D2432E"), Color.WHITE, "SKIP IT")
+            Verdict.GOOD -> Triple(Color.parseColor("#3DDC84"), Color.parseColor("#0A0A0B"), "GOOD OFFER")
+            Verdict.BAD -> Triple(Color.parseColor("#FF5A4A"), Color.parseColor("#0A0A0B"), "SKIP IT")
         }
 
         val density = service.resources.displayMetrics.density
@@ -74,8 +74,9 @@ class OverlayController(private val service: AccessibilityService) {
             orientation = LinearLayout.VERTICAL
             setPadding(16.dp(), 10.dp(), 16.dp(), 12.dp())
             background = GradientDrawable().apply {
-                cornerRadius = 14.dp().toFloat()
-                setColor(Color.parseColor("#F214191F"))
+                cornerRadius = 12.dp().toFloat()
+                setColor(Color.parseColor("#F5141416"))
+                setStroke(1.dp(), Color.parseColor("#26262A"))
             }
             elevation = 8.dp().toFloat()
         }
@@ -85,7 +86,7 @@ class OverlayController(private val service: AccessibilityService) {
                 "$label  ·  ${money(o.payoutCents, o.currencySymbol, o.currencyCode)}"
             setTextColor(fgColor)
             textSize = 15f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTypeface(android.graphics.Typeface.MONOSPACE, android.graphics.Typeface.BOLD)
             background = GradientDrawable().apply {
                 cornerRadius = 8.dp().toFloat()
                 setColor(bg)
@@ -103,8 +104,9 @@ class OverlayController(private val service: AccessibilityService) {
                 }.orEmpty() +
                 o.durationMin?.let { " · ${it.toInt()} min" }.orEmpty() +
                 if (scored.reasons.isNotEmpty()) "\n${scored.reasons.joinToString(", ")}" else ""
-            setTextColor(Color.parseColor("#D7DBE4"))
+            setTextColor(Color.parseColor("#B4B4BA"))
             textSize = 12.5f
+            setTypeface(android.graphics.Typeface.MONOSPACE)
             setPadding(0, 8.dp(), 0, 0)
         }
         container.addView(title)
@@ -127,7 +129,7 @@ class OverlayController(private val service: AccessibilityService) {
                 setOnClickListener { onAction(act) }
             }
             o.declineNode?.let {
-                row.addView(pill("Decline", Color.parseColor("#4A5260"), Action.DECLINE))
+                row.addView(pill("Decline", Color.parseColor("#2A2A2F"), Action.DECLINE))
             }
             o.acceptNode?.let {
                 row.addView(
@@ -169,7 +171,7 @@ class OverlayController(private val service: AccessibilityService) {
             tickExpiry(o.expiresInSec) { onAction(Action.EXPIRED) }
         }
 
-        // Mystro-style countdown strip: auto-accept fires when it hits 0,
+        // Countdown strip: auto-accept fires when it hits 0,
         // tapping it cancels and leaves the offer alone.
         if (autoAcceptSec > 0) {
             countdown = TextView(service).apply {

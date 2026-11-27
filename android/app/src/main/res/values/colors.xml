@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg">#F4F5F7</color>
-    <color name="elevated">#FFFFFF</color>
-    <color name="fg">#16181D</color>
-    <color name="muted">#5D6472</color>
-    <color name="accent">#0B8A80</color>
-    <color name="accent_fg">#FFFFFF</color>
-    <color name="positive">#16915A</color>
-    <color name="negative">#D2432E</color>
-    <color name="warning">#B07A0D</color>
+    <color name="bg">#0A0A0B</color>
+    <color name="elevated">#141416</color>
+    <color name="fg">#F2F2F4</color>
+    <color name="muted">#8D8D93</color>
+    <color name="accent">#FF7A1A</color>
+    <color name="accent_fg">#0A0A0B</color>
+    <color name="positive">#3DDC84</color>
+    <color name="negative">#FF5A4A</color>
+    <color name="warning">#FFB020</color>
     <color name="icon_bg">#0A0A0B</color>
 </resources>
