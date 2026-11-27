@@ -202,6 +202,45 @@ class LocalDb(ctx: Context) : SQLiteOpenHelper(ctx, "shiftlit.db", null, 3) {
         return days(b) - days(a)
     }
 
+    // ---- GPS trails kept with tracked shifts (the heatmap's only input) ----
+
+    data class TrackPoint(val lat: Double, val lng: Double, val at: Long)
+
+    /** Points plus how many shifts actually contributed a trail. */
+    data class Heat(val points: List<TrackPoint>, val shifts: Int)
+
+    /**
+     * The trails stored on mileage records created by the shift tracker.
+     * Hand-entered mileage and records from older builds have no trail, so
+     * they contribute nothing here.
+     */
+    fun heat(sinceMs: Long): Heat {
+        val pts = mutableListOf<TrackPoint>()
+        var shifts = 0
+        readableDatabase.rawQuery(
+            "SELECT created_at, payload FROM records " +
+                "WHERE type = 'mileage' AND created_at >= ?",
+            arrayOf(sinceMs.toString()),
+        ).use { c ->
+            while (c.moveToNext()) {
+                val at = c.getLong(0)
+                val arr = JSONObject(c.getString(1)).optJSONArray("points") ?: continue
+                var added = 0
+                for (i in 0 until arr.length()) {
+                    val xy = arr.optJSONArray(i) ?: continue
+                    val lat = xy.optDouble(0, Double.NaN)
+                    val lng = xy.optDouble(1, Double.NaN)
+                    if (lat.isNaN() || lng.isNaN()) continue
+                    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) continue
+                    pts.add(TrackPoint(lat, lng, at))
+                    added++
+                }
+                if (added > 1) shifts++
+            }
+        }
+        return Heat(pts, shifts)
+    }
+
     data class Totals(val earnedCents: Int, val spentCents: Int, val km: Double)
     data class Stats(
         val earnedCents: Int, val spentCents: Int, val km: Double,

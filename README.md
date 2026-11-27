@@ -48,6 +48,9 @@ Everything runs on-device. No account required, no subscription, no tracking.
   separately
 - **Automatic GPS mileage** — a foreground "shift" tracker with jitter and
   teleport filtering; can start itself when a driver app opens
+- **Offline heatmap** — the GPS trail kept with each tracked shift, drawn as a
+  density map with a scale bar on the Track tab. No map tiles, no network, no
+  SDK: it shows the shape and density of your driving, not street names
 - **Automatic earnings capture** — post-trip summary screens become earning
   records without typing anything
 - **Diagnostics** — see exactly what the assistant last read inside each
@@ -205,8 +208,9 @@ docs/              legal docs (privacy, terms, cookies)
 
 ## Privacy
 
-Screen content never leaves the phone unless you paste it into AI setup
-yourself, and the only network traffic is the anonymous GitHub update check
+Screen content and your GPS trail never leave the phone unless you paste
+something into AI setup yourself, and the only network traffic is the
+anonymous GitHub update check
 plus — only if you add a key — the AI provider you chose. Automation is
 opt-in and cancellable. Full details:
 [`docs/legal/privacy-policy.md`](docs/legal/privacy-policy.md).

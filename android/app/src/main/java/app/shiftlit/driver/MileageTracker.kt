@@ -30,6 +30,10 @@ class MileageTracker : Service(), LocationListener {
         private const val CHANNEL = "mileage_tracking"
         private const val NOTIF_ID = 42
 
+        /** One trail point per ~50 m, capped so a long shift stays a small record. */
+        private const val TRAIL_STEP_M = 50f
+        private const val MAX_TRAIL_POINTS = 800
+
         /** Live-ish state readable by the UI. */
         @Volatile var running = false
             private set
@@ -53,6 +57,8 @@ class MileageTracker : Service(), LocationListener {
     private var lm: LocationManager? = null
     private var last: Location? = null
     private var db: LocalDb? = null
+    private var trail: org.json.JSONArray? = null
+    private var lastTrail: Location? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -79,6 +85,8 @@ class MileageTracker : Service(), LocationListener {
         last = null // a stale anchor from a previous shift corrupts the first fix
         startedAt = System.currentTimeMillis()
         db = LocalDb(this)
+        trail = org.json.JSONArray()
+        lastTrail = null
 
         lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         // Request each provider independently — with only COARSE permission,
@@ -113,10 +121,22 @@ class MileageTracker : Service(), LocationListener {
                 // Teleport — re-anchor instead of discarding every fix that
                 // follows, or the odometer stays frozen for the whole shift.
                 last = location
+                lastTrail = location
                 return
             }
             kmSoFar += d / 1000.0
             updateNotification()
+        }
+        // A sparse trail for the heatmap: ~50 m apart, capped. Denser points
+        // would not improve the picture and would bloat every mileage record.
+        val t = trail
+        if (t != null && t.length() < MAX_TRAIL_POINTS &&
+            (lastTrail == null || lastTrail!!.distanceTo(location) >= TRAIL_STEP_M)
+        ) {
+            t.put(org.json.JSONArray()
+                .put(Math.round(location.latitude * 100_000.0) / 100_000.0)
+                .put(Math.round(location.longitude * 100_000.0) / 100_000.0))
+            lastTrail = location
         }
         last = location
     }
@@ -154,14 +174,21 @@ class MileageTracker : Service(), LocationListener {
         lm = null
         val km = kmSoFar
         val started = startedAt
+        val pts = trail
         kmSoFar = 0.0
         startedAt = 0L
+        trail = null
+        lastTrail = null
         if (km >= 0.05 && db != null) {
-            db!!.insert("mileage", JSONObject()
+            val payload = JSONObject()
                 .put("distanceKm", km)
                 .put("purpose", "WORK")
                 .put("description", "Auto-tracked shift")
-                .put("date", started))
+                .put("date", started)
+            // The trail rides with the mileage record, so deleting that record
+            // also removes its contribution to the heatmap.
+            if (pts != null && pts.length() > 1) payload.put("points", pts)
+            db!!.insert("mileage", payload)
         }
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()

@@ -18,7 +18,9 @@ Five tabs behind a floating frosted tab bar:
 - **Plan** — recurring shift blocks with day-of-week picker, start/end
   times, and an optional earnings target; saved on-device.
 - **Track** — quick-add earnings, expenses, and mileage in grouped iOS
-  forms. Everything saves to a local SQLite store — works fully offline.
+  forms, plus a heatmap of the GPS trails kept by tracked shifts (drawn
+  offline — no map tiles, no network). Everything saves to a local SQLite
+  store and works fully offline.
 - **Assistant** — accessibility-service status, Monitoring / Auto-accept /
   Auto-decline switches (both automation switches off by default), offer
   rules, and diagnostics.

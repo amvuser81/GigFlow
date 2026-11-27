@@ -19,7 +19,7 @@ storage means other apps cannot read it, and it is removed when you uninstall.
 | Taught mappings — the screen signature and the nodes you pointed at | So a layout the parser can't read can be taught once |
 | AI setup — the provider you picked, model, endpoint, and the API key you pasted | So the optional AI rule drafting can call that provider with your key |
 | Records you create — earnings, expenses, mileage and schedules | The app's own bookkeeping |
-| GPS breadcrumbs — only while a shift is running | To compute distance for that shift |
+| GPS trail — only while a shift is running | To compute that shift's distance and draw the on-device heatmap |
 
 ## 2. Permissions and what they allow
 

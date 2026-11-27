@@ -33,6 +33,9 @@ class TrackScreen(
     private var kind = 0 // 0 earning, 1 expense, 2 mileage
     private var editing: LocalDb.Row? = null
 
+    /** Heatmap range in days; 0 = everything recorded. */
+    private var heatDays = 30
+
     fun refresh() {
         screen.column.removeAllViews()
         val c = screen.column
@@ -98,6 +101,15 @@ class TrackScreen(
         c.addView(shiftCard)
         c.addView(TextView(ctx).apply {
             text = "Tracked distance is an estimate — edit the record it creates if needed."
+            textSize = Ios.T_FOOTNOTE; setTextColor(p.label2)
+            setPadding(dp(ctx, 20f), dp(ctx, 6f), 0, 0)
+        })
+
+        c.addView(Sections.header(ctx, p, "Where you drive"))
+        c.addView(heatmapCard())
+        c.addView(TextView(ctx).apply {
+            text = "Drawn from the GPS trail kept with each tracked shift. No map tiles, " +
+                "no network — it shows the shape and density of your driving, not street names."
             textSize = Ios.T_FOOTNOTE; setTextColor(p.label2)
             setPadding(dp(ctx, 20f), dp(ctx, 6f), 0, 0)
         })
@@ -251,6 +263,53 @@ class TrackScreen(
         cancel.setOnClickListener { sheet.dismiss() }
         sheet.show()
         sheet.onDismiss { }
+    }
+
+    /** Range-switchable heatmap of the trails the shift tracker recorded. */
+    private fun heatmapCard(): View {
+        val card = Sections.card(ctx, p)
+        val since = if (heatDays <= 0) 0L
+                    else System.currentTimeMillis() - heatDays * 86_400_000L
+        val heat = db.heat(since)
+        if (heat.points.size < 2) {
+            card.addView(TextView(ctx).apply {
+                text = if (heatDays > 0)
+                    "No GPS points in the last $heatDays days. Older tracked shifts are still " +
+                        "there — try All — or start a new shift."
+                else
+                    "No GPS points yet. Every tracked shift keeps a sparse trail and the map " +
+                        "fills in as you drive. Hand-entered mileage has no trail."
+                textSize = Ios.T_SUBHEAD; setTextColor(p.label2)
+                setPadding(dp(ctx, 16f), dp(ctx, 14f), dp(ctx, 16f), dp(ctx, 10f))
+            })
+        } else {
+            card.addView(HeatmapView(ctx, p).apply { setPoints(heat.points) },
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(ctx, 230f)))
+            card.addView(TextView(ctx).apply {
+                text = "${heat.shifts} tracked shifts · ${heat.points.size} GPS points"
+                textSize = Ios.T_FOOTNOTE; setTextColor(p.label3)
+                setPadding(dp(ctx, 16f), 0, dp(ctx, 16f), dp(ctx, 6f))
+            })
+        }
+        card.addView(Sections.separator(ctx, p))
+        card.addView(LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(ctx, 16f), dp(ctx, 10f), dp(ctx, 16f), dp(ctx, 12f))
+            addView(TextView(ctx).apply {
+                text = "Range"
+                textSize = Ios.T_SUBHEAD; setTextColor(p.label2)
+                setPadding(0, 0, 0, dp(ctx, 8f))
+            })
+            addView(IosSegmented(ctx, p, listOf("30 days", "90 days", "All"),
+                initial = when (heatDays) { 90 -> 1; 0 -> 2; else -> 0 }).apply {
+                onSelected = { i ->
+                    heatDays = when (i) { 0 -> 30; 1 -> 90; else -> 0 }
+                    refresh()
+                }
+            })
+        })
+        return card
     }
 
     private fun isKm() = settings.distanceUnit == "KM"
