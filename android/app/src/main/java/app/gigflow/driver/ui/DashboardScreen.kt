@@ -142,8 +142,13 @@ class DashboardScreen(
         layoutParams = LinearLayout.LayoutParams(1, dp(ctx, h))
     }
 
-    private fun money(cents: Int?, symbol: String = settings.currencySymbol) =
-        Ios.money(cents, symbol)
+    // Everything on this screen is the driver's own money, i.e. the configured
+    // currency — so the configured ISO code is always the right one.
+    private fun money(
+        cents: Int?,
+        symbol: String = settings.currencySymbol,
+        code: String? = settings.currencyCode,
+    ) = Ios.money(cents, symbol, code)
 
     private fun isKm() = settings.distanceUnit == "KM"
     private fun dist(km: Double) = if (isKm()) "%.1f km".format(km)

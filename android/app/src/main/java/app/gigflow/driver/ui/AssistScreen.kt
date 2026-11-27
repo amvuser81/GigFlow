@@ -283,6 +283,10 @@ class AssistScreen(
         val device = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}" +
             " · Android ${android.os.Build.VERSION.RELEASE}" +
             " (SDK ${android.os.Build.VERSION.SDK_INT})"
+        // Bounds are raw screen pixels, so the report has to say what a pixel
+        // is: without the display size an analyser can't tell a 400px row on a
+        // 1080p phone from one on a tablet.
+        val dm = ctx.resources.displayMetrics
         val iso = java.time.Instant.ofEpochMilli(snap.at).toString()
 
         val json = org.json.JSONObject()
@@ -292,6 +296,20 @@ class AssistScreen(
             .put("appVersion", versionName)
             .put("appVersionCode", versionCode)
             .put("device", device)
+            .put(
+                "display",
+                org.json.JSONObject()
+                    .put("widthPx", dm.widthPixels)
+                    .put("heightPx", dm.heightPixels)
+                    .put("densityDpi", dm.densityDpi)
+                    .put("density", dm.density.toDouble()),
+            )
+            .put("boundsUnit", "screen pixels")
+            .put(
+                "notes",
+                "Nodes without text or a content description are not captured; " +
+                    "screenNodeCount is the pre-truncation total.",
+            )
             .put("driverApp", name)
             .put("package", pkg)
             .put("outcome", snap.outcome)
@@ -330,6 +348,8 @@ class AssistScreen(
             append("app         GigFlow ").append(versionName)
                 .append(" (").append(versionCode).append(")\n")
             append("device      ").append(device).append('\n')
+            append("display     ").append(dm.widthPixels).append('x').append(dm.heightPixels)
+                .append(" px · ").append(dm.densityDpi).append(" dpi\n")
             append("screen key  ").append(snap.screen).append('\n')
             append("nodes       ").append(snap.nodes.size)
             if (snap.nodeCount > snap.nodes.size) append(" of ").append(snap.nodeCount)

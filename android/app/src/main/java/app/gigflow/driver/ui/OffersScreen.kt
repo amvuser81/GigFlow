@@ -32,13 +32,20 @@ class OffersScreen(ctx: Context, private val p: Palette, private val settings: a
     )
     private fun distText(km: Double) =
         "%.1f %s".format(if (isKm()) km else km * 0.621371, if (isKm()) "km" else "mi")
-    private val suffixCurrencies = setOf("Ft", "kr", "zł", "lei", "Kč", "₺", "₴")
-    private fun perDistText(centsPerMile: Int, symbol: String = "$"): String {
-        val v = (if (isKm()) centsPerMile / 1.609344 else centsPerMile.toDouble()) / 100f
-        val unit = if (isKm()) "km" else "mi"
-        return if (symbol in suffixCurrencies) "%,.0f %s/%s".format(v, symbol, unit)
-        else "%s%.2f/%s".format(symbol, v, unit)
-    }
+    /** Per-distance rate through the currency registry: placement, decimals and
+     *  the ISO disambiguation all come from the same rules as the amount, so a
+     *  CNY row doesn't inherit yen's whole-unit style. */
+    private fun perDistRate(centsPerMile: Int, symbol: String, code: String? = null): String =
+        Currencies.format(
+            if (isKm()) (centsPerMile / 1.609344).toInt() else centsPerMile,
+            symbol,
+            code,
+        )
+
+    // The unit is appended, never stripped back off: symbols like "S/" (PEN)
+    // contain a slash, so splitting the rendered string would corrupt them.
+    private fun perDistText(centsPerMile: Int, symbol: String = "$", code: String? = null): String =
+        "${perDistRate(centsPerMile, symbol, code)}/${if (isKm()) "km" else "mi"}"
 
     fun refresh() {
         screen.column.removeAllViews()
@@ -94,7 +101,7 @@ class OffersScreen(ctx: Context, private val p: Palette, private val settings: a
             if (e.reservation) append("Reserved")
             e.distanceKm?.let { if (isNotEmpty()) append(" · "); append(distText(it)) }
             e.durationMin?.let { if (isNotEmpty()) append(" · "); append("${it.toInt()} min") }
-            e.perMileCents?.let { if (isNotEmpty()) append(" · "); append(perDistText(it, e.currency)) }
+            e.perMileCents?.let { if (isNotEmpty()) append(" · "); append(perDistText(it, e.currency, code(e))) }
             if (e.action != "shown") {
                 if (isNotEmpty()) append(" · ")
                 append(e.action.replace('_', ' '))
@@ -177,7 +184,9 @@ class OffersScreen(ctx: Context, private val p: Palette, private val settings: a
             if (e.reservation) "Type" to "Reservation" else null,
             e.distanceKm?.let { "Distance" to distText(it) },
             e.durationMin?.let { "Duration" to "${it.toInt()} min" },
-            e.perMileCents?.let { "Per ${if (isKm()) "kilometre" else "mile"}" to perDistText(it, e.currency).substringBefore('/') },
+            e.perMileCents?.let {
+                "Per ${if (isKm()) "kilometre" else "mile"}" to perDistRate(it, e.currency, code(e))
+            },
             e.perHourCents?.let { "Per hour" to Ios.money(it, e.currency, code(e)) },
             "Action" to (if (e.action == "shown") "Seen only" else e.action.replace('_', ' ')),
         )
