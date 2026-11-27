@@ -551,7 +551,9 @@ class AssistScreen(
                 "Tap the payout, distance and duration when the normal parser misses them — " +
                     "taught amounts are only used where the heuristics find nothing. Accept " +
                     "and Decline apply even on a screen that already reads fine, which is how " +
-                    "an unlabeled \"×\" button gets taught.",
+                    "an unlabeled \"×\" button gets taught.\n\nThis list is for a card that " +
+                    "has gone from the screen. On a live card, tap \"Teach this card\" on the " +
+                    "verdict and point at the control instead.",
                 Ios.T_FOOTNOTE, p.label2, 6f,
             ))
             val savedHere = ParseHints.forKey(ctx, pkg, screen)
