@@ -8,11 +8,11 @@ plugins {
 val releaseKeystore = System.getenv("GIGFLOW_KEYSTORE")
 
 android {
-    namespace = "app.gigflow.driver"
+    namespace = "app.shiftlit.driver"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "app.gigflow.driver"
+        applicationId = "app.shiftlit.driver"
         minSdk = 26
         targetSdk = 36
         versionCode = 10731
