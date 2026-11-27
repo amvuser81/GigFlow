@@ -15,8 +15,8 @@ android {
         applicationId = "app.shiftlit.driver"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10802
-        versionName = "1.8.2"
+        versionCode = 10803
+        versionName = "1.8.3"
     }
 
     signingConfigs {
