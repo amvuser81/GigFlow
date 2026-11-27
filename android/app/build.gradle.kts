@@ -15,8 +15,8 @@ android {
         applicationId = "app.gigflow.driver"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10721
-        versionName = "1.7.21"
+        versionCode = 10722
+        versionName = "1.7.22"
     }
 
     signingConfigs {
