@@ -2,7 +2,8 @@
 
 <img src="docs/brand/lockup.png" width="380" alt="Shiftlit" />
 
-# Shiftlit
+# THIS IS STILL A WORK IN PROGRESS, I WOULD NOT ADVISE USING YET
+  Shiftlit
 
 **Your shift. One decision.**
 
