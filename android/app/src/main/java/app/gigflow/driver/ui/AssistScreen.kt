@@ -215,66 +215,6 @@ class AssistScreen(
                 chevron = snap?.texts?.isNotEmpty() == true,
             ) { snap?.let { showDiag(name, it) } })
         }
-        card.addView(Sections.separator(ctx, p))
-        // Whether the declaration in the service config actually reached the
-        // system. Android 14 only lets a declared tool read data-sensitive
-        // views, so "no" here means every redacted card stays invisible.
-        val tool = if (android.os.Build.VERSION.SDK_INT >= 31) {
-            GigFlowAccessibilityService.instance?.serviceInfo?.let {
-                if (it.isAccessibilityTool) "yes" else "no"
-            } ?: "service off"
-        } else {
-            "needs Android 12+"
-        }
-        card.addView(Sections.row(ctx, p,
-            title = "Accessibility tool flag",
-            subtitle = "Android 14 hides data-sensitive views from a service without it",
-            value = tool,
-            iconGlyph = "doc",
-            iconTint = if (tool == "yes") p.green else p.orange,
-            chevron = false,
-        ) {})
-
-        card.addView(Sections.separator(ctx, p))
-        // The one question that decides whether OCR is worth building: are the
-        // pixels of the driver app's window readable, or blacked out?
-        val probeState = TextView(ctx).apply {
-            text = GigFlowAccessibilityService.instance?.probeSummary
-                ?.takeIf { it.isNotEmpty() } ?: "Not run yet"
-            textSize = Ios.T_FOOTNOTE
-            setTextColor(p.label2)
-            setPadding(0, dp(ctx, 6f), 0, dp(ctx, 10f))
-        }
-        card.addView(LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(ctx, 16f), dp(ctx, 14f), dp(ctx, 16f), dp(ctx, 14f))
-            addView(TextView(ctx).apply {
-                text = "Probe the driver app's window"
-                textSize = Ios.T_HEADLINE
-                setTypeface(typeface, Typeface.BOLD)
-                setTextColor(p.label)
-            })
-            addView(TextView(ctx).apply {
-                text = "Arm it, switch to the driver app, and the next card is captured " +
-                    "in place — the result lands in that app's Diagnostics below."
-                textSize = Ios.T_FOOTNOTE
-                setTextColor(p.label2)
-            })
-            addView(probeState)
-            addView(iosButton(ctx, p, "Arm probe").apply {
-                setOnClickListener {
-                    val svc = GigFlowAccessibilityService.instance
-                    if (svc == null) {
-                        probeState.text = "Service is off — enable it first"
-                    } else {
-                        svc.armProbe { msg -> probeState.text = msg }
-                    }
-                }
-            }, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ))
-        })
         return card
     }
 
@@ -308,14 +248,20 @@ class AssistScreen(
             textSize = Ios.T_FOOTNOTE; setTextColor(p.label2)
             setPadding(0, 0, 0, dp(ctx, 10f))
         })
-        // The pixel probe is the answer to "can OCR ever read this screen?"
-        // Kept next to the tree because that is what it was taken against.
-        if (snap.probe.isNotBlank()) {
+        // The history lives on its own sheet: the per-app row is already the
+        // busiest thing here, and 20 reads inline would bury the current one.
+        val histPkg = watchedApps.firstOrNull { it.first == name }?.second
+        val history = histPkg?.let { Diagnostics.history(ctx, it) }.orEmpty()
+        if (history.isNotEmpty()) {
             col.addView(TextView(ctx).apply {
-                text = "Pixel probe: ${snap.probe}"
-                textSize = Ios.T_FOOTNOTE
-                setTextColor(if (snap.probe.contains("readable")) p.green else p.orange)
+                text = "History · last ${history.size} reads"
+                textSize = Ios.T_FOOTNOTE; setTypeface(typeface, Typeface.BOLD)
+                setTextColor(p.tint)
                 setPadding(0, 0, 0, dp(ctx, 8f))
+                setOnClickListener {
+                    sheet.dismiss()
+                    historySheet(name, history)
+                }
             })
         }
         snap.texts.forEach { t ->
@@ -414,6 +360,65 @@ class AssistScreen(
     private data class DiagReport(val json: String, val body: String)
 
     /**
+     * The last 20 reads of one app, newest first. The snapshot shows the tree;
+     * this shows the sequence, which is what a card that appears for a moment
+     * and gets scored wrongly looks like after the fact.
+     */
+    private fun historySheet(name: String, entries: List<Diagnostics.Entry>) {
+        val sheet = IosSheet(ctx, p)
+        val col = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(ctx, 20f), dp(ctx, 4f), dp(ctx, 20f), dp(ctx, 16f))
+        }
+        col.addView(TextView(ctx).apply {
+            text = "$name · history"
+            textSize = Ios.T_HEADLINE; setTypeface(typeface, Typeface.BOLD)
+            setTextColor(p.label); setPadding(0, 0, 0, dp(ctx, 4f))
+        })
+        col.addView(TextView(ctx).apply {
+            text = "Newest first. One line per read; the full node tree is kept only " +
+                "for the latest read."
+            textSize = Ios.T_FOOTNOTE; setTextColor(p.label2)
+            setPadding(0, 0, 0, dp(ctx, 6f))
+        })
+        entries.forEach { e ->
+            col.addView(TextView(ctx).apply {
+                text = "${e.outcome} · ${ago(e.at)} · ${e.nodeCount} nodes"
+                textSize = Ios.T_FOOTNOTE; setTypeface(typeface, Typeface.BOLD)
+                setTextColor(
+                    when (e.outcome) {
+                        "offer" -> p.green
+                        "miss" -> p.orange
+                        else -> p.label2
+                    },
+                )
+                setPadding(0, dp(ctx, 10f), 0, dp(ctx, 2f))
+            })
+            e.decision.take(6).forEach { d ->
+                col.addView(TextView(ctx).apply {
+                    text = d
+                    textSize = Ios.T_CAPTION; setTextColor(p.label2)
+                })
+            }
+            val head = e.texts.take(4)
+            if (head.isNotEmpty()) {
+                col.addView(TextView(ctx).apply {
+                    text = head.joinToString(" · ")
+                    textSize = Ios.T_CAPTION; setTextColor(p.label3)
+                })
+            }
+        }
+        col.addView(TextView(ctx).apply {
+            text = "Close"
+            textSize = Ios.T_BODY; setTypeface(typeface, Typeface.BOLD)
+            setTextColor(p.tint); gravity = android.view.Gravity.CENTER
+            setPadding(0, dp(ctx, 16f), 0, dp(ctx, 4f))
+            setOnClickListener { sheet.dismiss() }
+        })
+        sheet.add(col).show()
+    }
+
+    /**
      * The whole capture, for a human first and a parser second: a readable
      * header, the parser's decision trail, one line per node
      * (index | text | viewId | bounds | clickable), then the same data as JSON.
@@ -461,7 +466,6 @@ class AssistScreen(
             .put("driverApp", name)
             .put("package", pkg)
             .put("outcome", snap.outcome)
-            .put("pixelProbe", snap.probe)
             .put("screenKey", snap.screen)
             .put("screenNodeCount", snap.nodeCount)
             .put("capturedNodeCount", snap.nodes.size)
@@ -493,9 +497,6 @@ class AssistScreen(
             append("GigFlow diagnostics\n")
             append("driver app  ").append(name).append("  (").append(pkg).append(")\n")
             append("outcome     ").append(snap.outcome).append('\n')
-            if (snap.probe.isNotBlank()) {
-                append("pixel probe ").append(snap.probe).append('\n')
-            }
             append("captured    ").append(iso).append("  epoch ").append(snap.at).append('\n')
             append("app         GigFlow ").append(versionName)
                 .append(" (").append(versionCode).append(")\n")

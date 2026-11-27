@@ -34,6 +34,12 @@ object Diagnostics {
     // snapshots get persisted, not every accessibility event.
     private const val IDLE_WRITE_MS = 30_000L
 
+    /** Reads kept per app, newest first — enough to see a card come and go. */
+    private const val MAX_HISTORY = 20
+    private const val HIST_PREFIX = "hist:"
+    private const val HIST_TEXTS = 12
+    private const val HIST_DECISION = 10
+
     /** One captured view node — enough to replay the parse later. */
     data class Node(
         val text: String,
@@ -55,8 +61,17 @@ object Diagnostics {
         val screen: String = "",
         /** Why the parser produced (or refused) a result, one line per step. */
         val decision: List<String> = emptyList(),
-        /** Pixel-probe result taken on this card, if the driver armed one. */
-        val probe: String = "",
+    )
+
+    /** One read in the per-app history. Compact on purpose: no node tree, so
+     *  twenty of them cost a few kilobytes and can be written every scan. */
+    data class Entry(
+        val at: Long,
+        val outcome: String,
+        val screen: String,
+        val nodeCount: Int,
+        val texts: List<String>,
+        val decision: List<String>,
     )
 
     private fun key(pkg: String) = KEY_PREFIX + pkg
@@ -167,6 +182,7 @@ object Diagnostics {
             .put("nodes", nodeArr)
             .put("decision", decisionArr)
         prefs.edit().putString(key(pkg), o.toString()).apply()
+        pushHistory(ctx, pkg, outcome, screen, texts, decision, nodeCount)
     }
 
     fun get(ctx: Context, pkg: String): Snap? {
@@ -194,7 +210,6 @@ object Diagnostics {
             decision = o.optJSONArray("decision")?.let { arr ->
                 (0 until arr.length()).map { arr.optString(it) }
             } ?: emptyList(),
-            probe = o.optString("probe"),
         )
     }
 
@@ -202,19 +217,77 @@ object Diagnostics {
         ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().clear().apply()
     }
 
-    /**
-     * Attach a pixel-probe result to the snapshot that is already stored. The
-     * capture finishes after the scan wrote its tree, and it describes that
-     * card — so it lands on that snapshot rather than on a fresh one.
-     */
-    fun noteProbe(ctx: Context, pkg: String, line: String) {
-        val o = load(ctx, pkg) ?: return
-        try {
-            o.put("probe", line)
-            ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
-                .putString(key(pkg), o.toString()).apply()
+    /** The last [MAX_HISTORY] reads of [pkg], newest first. */
+    fun history(ctx: Context, pkg: String): List<Entry> {
+        val raw = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+            .getString(HIST_PREFIX + pkg, null) ?: return emptyList()
+        val arr = try {
+            JSONArray(raw)
         } catch (_: Exception) {
-            // A probe note is never worth crashing a scan over.
+            return emptyList()
         }
+        return (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            Entry(
+                at = o.optLong("at"),
+                outcome = o.optString("outcome"),
+                screen = o.optString("screen"),
+                nodeCount = o.optInt("nodeCount"),
+                texts = o.optJSONArray("texts")?.let { a ->
+                    (0 until a.length()).map { a.optString(it) }
+                } ?: emptyList(),
+                decision = o.optJSONArray("decision")?.let { a ->
+                    (0 until a.length()).map { a.optString(it) }
+                } ?: emptyList(),
+            )
+        }
+    }
+
+    /**
+     * Remember one read. The latest snapshot already keeps the full tree; this
+     * keeps what changes fastest — outcome, why, and the first few texts — so
+     * "it said new offer for a second" can be looked at after the fact.
+     */
+    private fun pushHistory(
+        ctx: Context,
+        pkg: String,
+        outcome: String,
+        screen: String,
+        texts: List<String>,
+        decision: List<String>,
+        nodeCount: Int,
+    ) {
+        val prefs = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        val k = HIST_PREFIX + pkg
+        val prev = try {
+            JSONArray(prefs.getString(k, null) ?: "[]")
+        } catch (_: Exception) {
+            JSONArray()
+        }
+        val trimmedDecision = decision.take(HIST_DECISION)
+        val entry = JSONObject()
+            .put("at", System.currentTimeMillis())
+            .put("outcome", outcome)
+            .put("screen", screen)
+            .put("nodeCount", nodeCount)
+            .put("texts", JSONArray(texts.take(HIST_TEXTS)))
+            .put("decision", JSONArray(trimmedDecision))
+        val out = JSONArray()
+        out.put(entry)
+        var kept = 0
+        for (i in 0 until prev.length()) {
+            if (kept >= MAX_HISTORY - 1) break
+            val o = prev.optJSONObject(i) ?: continue
+            // The same read repeated is noise, not history.
+            val sameDecision = o.optJSONArray("decision")?.let { a ->
+                (0 until a.length()).joinToString("|") { a.optString(it) }
+            } == trimmedDecision.joinToString("|")
+            if (o.optString("outcome") == outcome &&
+                o.optString("screen") == screen && sameDecision
+            ) continue
+            out.put(o)
+            kept++
+        }
+        prefs.edit().putString(k, out.toString()).apply()
     }
 }

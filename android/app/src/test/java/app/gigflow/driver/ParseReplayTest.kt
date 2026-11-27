@@ -423,4 +423,30 @@ class ParseReplayTest {
             OfferParser.looksLikeOfferForTeaching(ReplayFixtures.bareNumbers.nodes),
         )
     }
+
+    @Test
+    fun windowScoringPicksTheCardOverTheWalletBehindIt() {
+        // The card: one amount plus request wording.
+        val card = OfferParser.scoreScreen(ReplayFixtures.bareNumbers.nodes)
+        // The wallet behind it: several amounts, no request wording at all.
+        val wallet = OfferParser.scoreScreen(
+            listOf(
+                OfferParser.FlatNode("3 200 Ft", null, Bounds(0, 0, 300, 40), false),
+                OfferParser.FlatNode("2 900 Ft", null, Bounds(0, 40, 300, 80), false),
+                OfferParser.FlatNode("4 100 Ft", null, Bounds(0, 80, 300, 120), false),
+            ),
+        )
+        assertTrue(
+            "more money must not outrank request wording: $card vs $wallet",
+            card.score > wallet.score,
+        )
+        assertTrue("the card carries request cues", card.cues > 0)
+        assertEquals(
+            "a window with no money can never be the card",
+            0,
+            OfferParser.scoreScreen(
+                listOf(OfferParser.FlatNode("Promo", null, Bounds(0, 0, 10, 10), false)),
+            ).score,
+        )
+    }
 }

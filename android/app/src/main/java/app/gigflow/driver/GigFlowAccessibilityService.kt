@@ -1,13 +1,9 @@
 package app.gigflow.driver
 
 import android.accessibilityservice.AccessibilityService
-import android.accessibilityservice.AccessibilityService.ScreenshotResult
-import android.accessibilityservice.AccessibilityService.TakeScreenshotCallback
 import android.content.Context
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
 import android.location.LocationManager
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
@@ -33,21 +29,6 @@ class GigFlowAccessibilityService : AccessibilityService() {
     private var lastScanAt = 0L
     private var scanToken = 0
     private var activeOffer: ScoredOffer? = null
-
-    /** Last driver app scanned — the target of the Diagnostics pixel probe. */
-    private var lastDriverPkg = ""
-
-    /** Result of the last probe, so the Diagnostics row survives a rebuild. */
-    var probeSummary: String = ""
-        private set
-
-    /** Window id the last driver-app scan used — the probe captures that one,
-     *  not "the first window of the package". */
-    private var lastDriverWindowId = -1
-
-    /** When a pixel probe is armed, and who is listening for its result. */
-    private var probeArmedAt = 0L
-    private var probeArmedReport: ((String) -> Unit)? = null
 
     /** Live point-at-the-card teach session, if one is running. */
     private var teach: TeachOverlay? = null
@@ -96,9 +77,6 @@ class GigFlowAccessibilityService : AccessibilityService() {
 
         /** A miss bar gives up on its own, like a verdict. */
         private const val MISS_BAR_MS = 20_000L
-
-        /** How long an armed pixel probe waits for the next card. */
-        private const val PROBE_ARM_MS = 120_000L
 
         /** Live instance while the service is enabled — null otherwise. */
         @Volatile var instance: GigFlowAccessibilityService? = null
@@ -175,7 +153,7 @@ class GigFlowAccessibilityService : AccessibilityService() {
      */
     fun startTeach(pkg: String) = handler.post {
         if (teachSession != null) return@post
-        val root = appWindowRoot(pkg)
+        val root = pickWindow(pkg)?.root
         if (root == null) {
             toast("Open the card first")
             return@post
@@ -215,7 +193,7 @@ class GigFlowAccessibilityService : AccessibilityService() {
      */
     private fun saveTeach(session: TeachSession, hint: ParseHints.Hint): String {
         ParseHints.save(this, hint)
-        val fresh = appWindowRoot(hint.pkg)?.let { OfferParser.flatten(it) } ?: session.nodes
+        val fresh = pickWindow(hint.pkg)?.root?.let { OfferParser.flatten(it) } ?: session.nodes
         val extra = OfferParser.extraMoney(settings.currencyCode, settings.currencySymbol)
         val offer = OfferParser.parse(
             hint.pkg, fresh, extra, settings.currencySymbol, settings.currencyCode,
@@ -231,31 +209,73 @@ class GigFlowAccessibilityService : AccessibilityService() {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
     }
 
+    /** A window we could read from, plus what it looked like when scored. */
+    private data class WindowPick(
+        val root: android.view.accessibility.AccessibilityNodeInfo,
+        val id: Int,
+        val type: Int,
+        val candidates: Int,
+        val money: Int,
+        val cues: Int,
+    )
+
     /**
-     * Offer cards often live in a popup/dialog window that isn't the
-     * "active" window, and rootInActiveWindow is a known-null API. Fall
-     * back to scanning all interactive windows for the driver app.
+     * The window of [pkg] that actually holds the offer. Offer cards live in
+     * their own window, and topmost-first is wrong the moment a promo sheet or
+     * a dialog sits above the card — so every window the package owns is scored
+     * on money plus request wording, and the best one wins. A tie falls back to
+     * window order (topmost first), which is the card over the app's own screen.
      */
-    private fun appWindowRoot(pkg: String): android.view.accessibility.AccessibilityNodeInfo? {
-        try {
-            // Windows come topmost-first, so the offer card wins over the app's
-            // main screen — and this is where the window id comes from, which
-            // the pixel probe needs to capture exactly this window.
-            for (w in windows) {
-                val r = w.root ?: continue
-                if (r.packageName?.toString() == pkg) {
-                    lastDriverWindowId = w.id
-                    return r
-                }
+    private fun pickWindow(pkg: String): WindowPick? {
+        val wins = try {
+            windows
+        } catch (_: Exception) {
+            emptyList()
+        }
+        val extra = OfferParser.extraMoney(settings.currencyCode, settings.currencySymbol)
+        var candidates = 0
+        var found = false
+        var bestId = -1
+        var bestType = -1
+        var bestScore = 0
+        var bestMoney = 0
+        var bestCues = 0
+        for (w in wins) {
+            val r = w.root ?: continue
+            if (r.packageName?.toString() != pkg) {
                 r.recycle()
+                continue
             }
-        } catch (_: Exception) { }
+            candidates++
+            // flatten() takes ownership of the root and recycles it, so the
+            // winning root is fetched again below.
+            val s = OfferParser.scoreScreen(
+                OfferParser.flatten(r), extra, settings.currencySymbol,
+            )
+            if (!found || s.score > bestScore) {
+                found = true
+                bestId = w.id
+                bestType = w.type
+                bestScore = s.score
+                bestMoney = s.money
+                bestCues = s.cues
+            }
+        }
+        if (found) {
+            val root = try {
+                wins.firstOrNull { it.id == bestId }?.root
+            } catch (_: Exception) {
+                null
+            }
+            if (root != null) {
+                return WindowPick(root, bestId, bestType, candidates, bestMoney, bestCues)
+            }
+        }
+        // The window list didn't give us one: fall back to the active root,
+        // which is still worth reading even without a window id to report.
         rootInActiveWindow?.let {
             if (it.packageName?.toString() == pkg) {
-                // The active root has no public window id to pair with it, so
-                // the probe falls back to a whole-screen capture.
-                lastDriverWindowId = -1
-                return it
+                return WindowPick(it, -1, -1, candidates, 0, 0)
             }
             it.recycle() // non-matching roots are ours to free
         }
@@ -280,134 +300,6 @@ class GigFlowAccessibilityService : AccessibilityService() {
         "windows=?"
     }
 
-    /**
-     * Arm a one-shot pixel probe. It fires on the next money-bearing screen of
-     * a driver app — while that app is in front — captures the window id the
-     * scan used, and writes the verdict into that app's Diagnostics snapshot.
-     *
-     * Arming from the Assistant screen is deliberate: GigFlow is in front
-     * there, so the card it needs to photograph isn't on screen yet. The whole
-     * point of the probe is that it runs over the card, not over GigFlow.
-     */
-    fun armProbe(report: (String) -> Unit) {
-        handler.post {
-            if (!settings.enabled) {
-                report("Monitoring is off — turn it on first")
-                return@post
-            }
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-                report("The pixel probe needs Android 11 or newer")
-                return@post
-            }
-            probeArmedAt = System.currentTimeMillis()
-            probeArmedReport = report
-            report("Armed — switch to the driver app; the next card is captured")
-        }
-    }
-
-    /** Capture the window the scan used, then record and toast the verdict. */
-    private fun captureWindow(pkg: String, windowId: Int) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-            finishProbe(pkg, windowId, "The pixel probe needs Android 11 or newer")
-            return
-        }
-        val exec = java.util.concurrent.Executor { r -> handler.post(r) }
-        val cb = shotCallback { line -> finishProbe(pkg, windowId, line) }
-        try {
-            if (Build.VERSION.SDK_INT >= 34 && windowId >= 0) {
-                takeScreenshotOfWindow(windowId, exec, cb)
-            } else {
-                takeScreenshot(android.view.Display.DEFAULT_DISPLAY, exec, cb)
-            }
-        } catch (e: Exception) {
-            finishProbe(pkg, windowId, "Capture failed: ${e.javaClass.simpleName}")
-        }
-    }
-
-    private fun finishProbe(pkg: String, windowId: Int, line: String) {
-        val full = "win=$windowId · $line"
-        probeSummary = full
-        Diagnostics.noteProbe(this, pkg, full)
-        toast(full)
-        probeArmedReport?.invoke(full)
-        probeArmedReport = null
-    }
-
-    private fun shotCallback(say: (String) -> Unit) = object : TakeScreenshotCallback {
-        override fun onSuccess(screenshot: ScreenshotResult) {
-            val line = try {
-                analyzeShot(screenshot)
-            } catch (e: Exception) {
-                "Could not read the capture: ${e.javaClass.simpleName}"
-            }
-            handler.post { say(line) }
-        }
-
-        override fun onFailure(errorCode: Int) {
-            handler.post { say(shotError(errorCode)) }
-        }
-    }
-
-    /** Share of sampled pixels that aren't black, and what that means for OCR. */
-    private fun analyzeShot(s: ScreenshotResult): String {
-        val buffer = s.hardwareBuffer
-        try {
-            val wrapped = Bitmap.wrapHardwareBuffer(buffer, s.colorSpace)
-                ?: return "The capture came back without an image"
-            val bmp = if (wrapped.config == Bitmap.Config.HARDWARE) {
-                wrapped.copy(Bitmap.Config.ARGB_8888, false) ?: wrapped
-            } else {
-                wrapped
-            }
-            val w = bmp.width
-            val h = bmp.height
-            if (w <= 0 || h <= 0) return "The capture was empty"
-            // A 100×100 grid is enough to tell content from a black frame, and
-            // cheap enough to run while the card is still on screen.
-            val stepX = maxOf(1, w / 100)
-            val stepY = maxOf(1, h / 100)
-            var lit = 0
-            var total = 0
-            var y = 0
-            while (y < h) {
-                var x = 0
-                while (x < w) {
-                    val c = bmp.getPixel(x, y)
-                    val luma = ((c shr 16 and 0xFF) + (c shr 8 and 0xFF) + (c and 0xFF)) / 3
-                    if (luma > 12) lit++
-                    total++
-                    x += stepX
-                }
-                y += stepY
-            }
-            if (total == 0) return "The capture was empty"
-            val pct = lit * 100 / total
-            val verdict = if (pct < 1) {
-                "BLACK — secure or hidden; no OCR can read this"
-            } else if (pct < 8) {
-                "almost black ($pct% lit) — likely secure; OCR would be unreliable"
-            } else {
-                "pixels readable ($pct% lit) — OCR is possible"
-            }
-            return "captured ${w}×${h} · $verdict"
-        } finally {
-            try {
-                buffer.close()
-            } catch (_: Exception) {
-                // The capture is already analysed; nothing left to release.
-            }
-        }
-    }
-
-    /** Platform screenshot error codes, spelled out. */
-    private fun shotError(code: Int): String = when (code) {
-        6 -> "SECURE WINDOW (FLAG_SECURE) — black for every app, so OCR is impossible here"
-        2 -> "No screenshot access — reinstall this build, then re-enable the service"
-        5 -> "The window vanished — reopen the card and retry"
-        1 -> "The system failed the capture (internal error)"
-        3 -> "Too many captures in a row — wait a second and retry"
-        else -> "Capture failed (error $code)"
-    }
 
     /** Hide the overlay only after the offer's been missing for a bit —
      *  single-frame parse misses are normal (animations, partial draws)
@@ -560,7 +452,6 @@ class GigFlowAccessibilityService : AccessibilityService() {
      */
     private fun scan(pkg: String, now: Long, attempt: Int, token: Int) {
         if (token != scanToken) return // superseded by a newer scan
-        lastDriverPkg = pkg
         val prefs = settings.rulesFor(pkg) // per-app overrides over globals
         // Monitoring switched off while an overlay was up — tear it down.
         if (!prefs.enabled) { offerGone(); return }
@@ -570,7 +461,7 @@ class GigFlowAccessibilityService : AccessibilityService() {
         val curSymbol = settings.currencySymbol
         val extraRe = OfferParser.extraMoney(settings.currencyCode, curSymbol)
 
-        val root = appWindowRoot(pkg) ?: run {
+        val pick = pickWindow(pkg) ?: run {
             // Window exists but its content isn't retrievable (or the window
             // list hasn't caught up yet) — record it so Diagnostics shows
             // "we saw the app but couldn't read it" rather than nothing.
@@ -582,9 +473,17 @@ class GigFlowAccessibilityService : AccessibilityService() {
             return
         }
 
-        val nodes = OfferParser.flatten(root)
+        val nodes = OfferParser.flatten(pick.root)
         val decision = ArrayList<String>(8)
         decision.add("attempt=$attempt nodes=${nodes.size}")
+        // Which window produced this read, and why it won. A promo sheet above
+        // the card would show up here as the chosen window with no request
+        // cues, which is exactly the silent steal this line exists to expose.
+        decision.add(
+            "window id=${pick.id} type=${pick.type} money=${pick.money} cues=${pick.cues}" +
+                if (pick.candidates > 1) " (best of ${pick.candidates})" else "",
+        )
+        if (pick.candidates > 1) decision.add(windowInventory())
         // Android 12+ lets an app mark views data-sensitive; a service that
         // isn't an accessibility tool receives them with no text at all. This
         // is the difference between "Uber renders a canvas" and "Uber redacts
@@ -594,21 +493,6 @@ class GigFlowAccessibilityService : AccessibilityService() {
         if (dataSensitive > 0 || nodes.isEmpty()) decision.add(windowInventory())
         val hasMoney = nodes.any {
             OfferParser.moneyOf(it.text, extraRe, curSymbol) != null
-        }
-        // An armed probe fires here: the driver app is in front, a card is on
-        // screen, and we know which window it came from.
-        if (probeArmedAt > 0L) {
-            when {
-                now - probeArmedAt > PROBE_ARM_MS -> {
-                    probeArmedAt = 0L
-                    probeArmedReport?.invoke("Probe expired — arm it again")
-                    probeArmedReport = null
-                }
-                hasMoney -> {
-                    probeArmedAt = 0L
-                    captureWindow(pkg, lastDriverWindowId)
-                }
-            }
         }
         // A taught mapping for this exact layout, if the user made one. It is
         // only consulted when the heuristics return nothing (see OfferParser).

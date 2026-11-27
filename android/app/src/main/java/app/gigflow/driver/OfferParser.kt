@@ -191,8 +191,8 @@ object OfferParser {
         val bounds: Bounds,
         val clickable: Boolean,
         /** Android 14+ redaction: the view declares its content sensitive, and
-         *  a service that isn't an accessibility tool receives it without any
-         *  text. See the service config's isAccessibilityTool. */
+         *  a service that isn't an accessibility tool receives it with no
+         *  text. Recorded so a blank snapshot explains itself. */
         val dataSensitive: Boolean = false,
     )
 
@@ -229,6 +229,41 @@ object OfferParser {
             }
         }
         return out
+    }
+
+    /**
+     * How much a window looks like a live offer card. Money is the floor — a
+     * window with no amount can't produce a verdict — and request wording is
+     * what separates a card from a wallet or an earnings summary.
+     *
+     * [score] deliberately ignores how much money there is: a wallet with five
+     * amounts must not outrank the one card sitting above it. Equal scores are
+     * left to the caller, which keeps window order (topmost first) as the
+     * tiebreak.
+     */
+    data class ScreenScore(val money: Int, val cues: Int) {
+        val score: Int get() = if (money == 0) 0 else 10 + cues * 5
+    }
+
+    fun scoreScreen(
+        nodes: List<FlatNode>,
+        extra: Regex? = null,
+        extraSymbol: String = "$",
+    ): ScreenScore {
+        var money = 0
+        var cues = 0
+        for (n in nodes) {
+            if (moneyOf(n.text, extra, extraSymbol) != null) money++
+            if (OFFER_WORDS.containsMatchIn(n.text) ||
+                ACCEPT_WORDS.containsMatchIn(n.text) ||
+                DECLINE_WORDS.containsMatchIn(n.text) ||
+                RESERVE_ACCEPT.containsMatchIn(n.text) ||
+                EXPIRY.containsMatchIn(n.text)
+            ) {
+                cues++
+            }
+        }
+        return ScreenScore(money, cues)
     }
 
     /**
