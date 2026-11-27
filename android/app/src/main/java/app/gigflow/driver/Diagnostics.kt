@@ -55,6 +55,8 @@ object Diagnostics {
         val screen: String = "",
         /** Why the parser produced (or refused) a result, one line per step. */
         val decision: List<String> = emptyList(),
+        /** Pixel-probe result taken on this card, if the driver armed one. */
+        val probe: String = "",
     )
 
     private fun key(pkg: String) = KEY_PREFIX + pkg
@@ -192,10 +194,27 @@ object Diagnostics {
             decision = o.optJSONArray("decision")?.let { arr ->
                 (0 until arr.length()).map { arr.optString(it) }
             } ?: emptyList(),
+            probe = o.optString("probe"),
         )
     }
 
     fun clear(ctx: Context) {
         ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().clear().apply()
+    }
+
+    /**
+     * Attach a pixel-probe result to the snapshot that is already stored. The
+     * capture finishes after the scan wrote its tree, and it describes that
+     * card — so it lands on that snapshot rather than on a fresh one.
+     */
+    fun noteProbe(ctx: Context, pkg: String, line: String) {
+        val o = load(ctx, pkg) ?: return
+        try {
+            o.put("probe", line)
+            ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+                .putString(key(pkg), o.toString()).apply()
+        } catch (_: Exception) {
+            // A probe note is never worth crashing a scan over.
+        }
     }
 }

@@ -255,19 +255,19 @@ class AssistScreen(
                 setTextColor(p.label)
             })
             addView(TextView(ctx).apply {
-                text = "Captures its pixels and says whether OCR could ever read them"
+                text = "Arm it, switch to the driver app, and the next card is captured " +
+                    "in place — the result lands in that app's Diagnostics below."
                 textSize = Ios.T_FOOTNOTE
                 setTextColor(p.label2)
             })
             addView(probeState)
-            addView(iosButton(ctx, p, "Capture and check").apply {
+            addView(iosButton(ctx, p, "Arm probe").apply {
                 setOnClickListener {
                     val svc = GigFlowAccessibilityService.instance
                     if (svc == null) {
                         probeState.text = "Service is off — enable it first"
                     } else {
-                        probeState.text = "Capturing…"
-                        svc.probeWindow { msg -> probeState.text = msg }
+                        svc.armProbe { msg -> probeState.text = msg }
                     }
                 }
             }, LinearLayout.LayoutParams(
@@ -308,6 +308,16 @@ class AssistScreen(
             textSize = Ios.T_FOOTNOTE; setTextColor(p.label2)
             setPadding(0, 0, 0, dp(ctx, 10f))
         })
+        // The pixel probe is the answer to "can OCR ever read this screen?"
+        // Kept next to the tree because that is what it was taken against.
+        if (snap.probe.isNotBlank()) {
+            col.addView(TextView(ctx).apply {
+                text = "Pixel probe: ${snap.probe}"
+                textSize = Ios.T_FOOTNOTE
+                setTextColor(if (snap.probe.contains("readable")) p.green else p.orange)
+                setPadding(0, 0, 0, dp(ctx, 8f))
+            })
+        }
         snap.texts.forEach { t ->
             col.addView(TextView(ctx).apply {
                 text = "· $t"
@@ -451,6 +461,7 @@ class AssistScreen(
             .put("driverApp", name)
             .put("package", pkg)
             .put("outcome", snap.outcome)
+            .put("pixelProbe", snap.probe)
             .put("screenKey", snap.screen)
             .put("screenNodeCount", snap.nodeCount)
             .put("capturedNodeCount", snap.nodes.size)
@@ -482,6 +493,9 @@ class AssistScreen(
             append("GigFlow diagnostics\n")
             append("driver app  ").append(name).append("  (").append(pkg).append(")\n")
             append("outcome     ").append(snap.outcome).append('\n')
+            if (snap.probe.isNotBlank()) {
+                append("pixel probe ").append(snap.probe).append('\n')
+            }
             append("captured    ").append(iso).append("  epoch ").append(snap.at).append('\n')
             append("app         GigFlow ").append(versionName)
                 .append(" (").append(versionCode).append(")\n")
