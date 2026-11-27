@@ -487,7 +487,28 @@ class ParseReplayTest {
         assertNotNull(offer)
         assertEquals("Match", offer!!.acceptNode?.label)
         assertEquals("the unnamed X must become the decline control", x.bounds, offer.declineNode?.bounds)
-        assertEquals("decline (unnamed)", offer.declineNode?.label)
+        assertEquals("decline (close X)", offer.declineNode?.label)
+    }
+
+    @Test
+    fun uberHomeDepotCloseXIsMappedAsDecline() {
+        // The live Home Depot card that was declined: $14.02, 57 min (21.4 mi).
+        // Its close X is a blank, id-less 144px button at the card's top-right.
+        val x = OfferParser.FlatNode("", null, Bounds(840, 937, 984, 1081), true)
+        val offer = OfferParser.parse(
+            "com.ubercab.driver",
+            listOf(
+                OfferParser.FlatNode("", null, Bounds(0, 0, 1080, 2340), true),
+                OfferParser.FlatNode("", null, Bounds(48, 889, 1032, 2148), true),
+                OfferParser.FlatNode("$14.02", null, Bounds(96, 1034, 489, 1202), false),
+                OfferParser.FlatNode("57 min (21.4 mi) total", null, Bounds(192, 1374, 723, 1458), false),
+                OfferParser.FlatNode("Accept", null, Bounds(96, 1800, 984, 1944), true),
+                x,
+            ),
+        )
+        assertNotNull(offer)
+        assertEquals("the blank top-right X is the decline control", x.bounds, offer!!.declineNode?.bounds)
+        assertEquals("decline (close X)", offer.declineNode?.label)
     }
 
     @Test

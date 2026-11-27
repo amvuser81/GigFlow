@@ -251,14 +251,14 @@ class AssistScreen(
         })
         snap.decision.forEach { d ->
             col.addView(TextView(ctx).apply {
-                text = d
+                text = diagLine(d)
                 textSize = Ios.T_CAPTION; setTextColor(p.label2)
             })
         }
-        snap.texts.forEach { t ->
+        if (snap.texts.isNotEmpty()) {
             col.addView(TextView(ctx).apply {
-                text = "· $t"
-                textSize = Ios.T_FOOTNOTE; setTextColor(p.label)
+                text = snap.texts.joinToString(" · ")
+                textSize = Ios.T_CAPTION; setTextColor(p.label3)
                 setPadding(0, dp(ctx, 2f), 0, dp(ctx, 2f))
             })
         }
@@ -460,7 +460,7 @@ class AssistScreen(
                 })
                 e.decision.forEach { d ->
                     col.addView(TextView(ctx).apply {
-                        text = d
+                        text = diagLine(d)
                         textSize = Ios.T_CAPTION; setTextColor(p.label2)
                     })
                 }
@@ -505,6 +505,11 @@ class AssistScreen(
         })
         sheet.add(col).show()
     }
+
+    /** Older captures predate the explicit close-X name; show the real control
+     *  without rewriting the stored trail. */
+    private fun diagLine(d: String): String =
+        d.replace("decline=decline (unnamed)", "decline=decline (close X)")
 
     /** The top history entry is this snapshot when it was written with it. */
     private fun sameRead(e: Diagnostics.Entry, snap: Diagnostics.Snap): Boolean =
@@ -557,6 +562,12 @@ class AssistScreen(
         val screen = snap.screen.ifBlank { ParseHints.screenKey(flat) }
         val curSymbol = settings.currencySymbol
         val extraRe = OfferParser.extraMoney(settings.currencyCode, curSymbol)
+        // The close X is unlabeled, but the parser can still recognize it from
+        // the card geometry. Use that to name the exact row in this picker.
+        val closeX = OfferParser.parse(
+            pkg, flat, extraRe, curSymbol, settings.currencyCode,
+            null, null, settings.distanceUnit,
+        )?.declineNode?.takeIf { it.label.contains("close X") }?.bounds
 
         val roles = if (onlyRole != null) listOf(onlyRole)
         else listOf("Payout", "Distance", "Duration", "Accept", "Decline")
@@ -694,7 +705,14 @@ class AssistScreen(
                     text = buildString {
                         if (role != null) append("[$role] ")
                         if (n.text.isEmpty()) {
-                            append(if (n.clickable) "(unnamed button)" else "(unnamed)")
+                            append(
+                                when {
+                                    n.clickable && closeX != null && n.bounds == closeX ->
+                                        "(Close X — decline button)"
+                                    n.clickable -> "(unnamed button)"
+                                    else -> "(unnamed)"
+                                },
+                            )
                         } else {
                             append(n.text.take(80))
                         }

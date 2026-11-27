@@ -8,7 +8,6 @@ import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityManager
-import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 
@@ -111,36 +110,9 @@ class OverlayController(private val service: AccessibilityService) {
         container.addView(title)
         container.addView(stats)
 
-        if (o.acceptNode?.clickable == true || o.declineNode != null) {
-            val row = LinearLayout(service).apply {
-                orientation = LinearLayout.HORIZONTAL
-                setPadding(0, 10.dp(), 0, 0)
-            }
-            fun pill(text: String, color: Int, act: Action) = Button(service).apply {
-                this.text = text
-                textSize = 12f
-                setTextColor(Color.WHITE)
-                isAllCaps = false
-                background = GradientDrawable().apply {
-                    cornerRadius = 18.dp().toFloat()
-                    setColor(color)
-                }
-                setOnClickListener { onAction(act) }
-            }
-            o.declineNode?.let {
-                row.addView(pill("Decline", Color.parseColor("#2A2A2F"), Action.DECLINE))
-            }
-            o.acceptNode?.takeIf { it.clickable }?.let {
-                row.addView(
-                    pill("Accept", Color.parseColor("#0B8A80"), Action.ACCEPT),
-                    LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                    ).apply { marginStart = 8.dp() },
-                )
-            }
-            container.addView(row)
-        }
+        // The card is deliberately read-only: accepting and declining are one
+        // tap inside the driver app. Automation still acts through the service,
+        // and the overlay leaves the driver's own controls alone.
 
         // Offer's own expiry timer, if the card showed one ("0:15", "12s").
         // The ticker arms even while auto-accept counts down — without it a

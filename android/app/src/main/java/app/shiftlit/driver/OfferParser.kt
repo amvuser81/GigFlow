@@ -619,7 +619,7 @@ object OfferParser {
                         n.bounds.centerY() in (m.bounds.top - 360)..(m.bounds.bottom + 240)
                 }
                 .minByOrNull { Math.abs(it.bounds.centerY() - m.bounds.centerY()) }
-                ?.let { it.ref().copy(label = "decline (unnamed)") }
+                ?.let { it.ref().copy(label = "decline (close X)") }
         }
 
         val decline = taughtDecline?.let { it.ref() }
