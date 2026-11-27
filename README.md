@@ -2,7 +2,7 @@
 
 <img src="docs/brand/lockup.png" width="380" alt="Shiftlit" />
 
-## Shiftlit
+## UBER EATS VERIFIED WORKING - ALL OTHER APPS UNTESTED
 
 **Your shift. One decision.**
 
