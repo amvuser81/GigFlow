@@ -702,6 +702,7 @@ class ShiftlitAccessibilityService : AccessibilityService() {
             currency = offer.currencySymbol,
             currencyCode = offer.currencyCode,
             rules = scored.reasons.joinToString("; ").ifBlank { null },
+            key = offer.fingerprint,
         ))
 
         // Voice alert for the verdict, when enabled.
@@ -724,45 +725,65 @@ class ShiftlitAccessibilityService : AccessibilityService() {
                 (settings.autoAcceptReservations || !offer.isReservation))
                 settings.autoAcceptDelaySec else 0
 
-        overlay.show(scored, autoAcceptDelay) { action ->
-            cancelAutoAccept()
-            when (action) {
-                OverlayController.Action.ACCEPT -> offer.acceptNode?.let {
-                    acceptGesture(it, offer.appPackage)
-                    recordAction(scored, "manual_accept")
+        // Auto-decline taps before the driver could read a card, so a SKIP IT
+        // scorecard would only land over the next screen. GOOD offers always
+        // keep their card: auto-accept counts down on it, and with automation
+        // off it is the only feedback. Without a tappable decline control the
+        // card still shows — nothing else would tell the driver why it failed.
+        val autoDeclineNow = prefs.autoDecline && scored.verdict == Verdict.BAD &&
+            automationTrusted && offer.declineNode != null
+
+        /** Draw the read-only scorecard and arm its optional timeout. */
+        fun showScorecard() {
+            overlay.show(scored, autoAcceptDelay) { action ->
+                cancelAutoAccept()
+                when (action) {
+                    OverlayController.Action.ACCEPT -> offer.acceptNode?.let {
+                        acceptGesture(it, offer.appPackage)
+                        recordAction(scored, "manual_accept")
+                    }
+                    OverlayController.Action.DECLINE -> offer.declineNode?.let {
+                        GesturePerformer.tap(this, it.bounds)
+                        recordAction(scored, "manual_decline")
+                    }
+                    // Offer's on-card timer hit zero — same teardown as the
+                    // card vanishing; never leave a pending tap behind.
+                    OverlayController.Action.EXPIRED -> offerGone()
+                    OverlayController.Action.CANCEL_AUTO -> Unit
                 }
-                OverlayController.Action.DECLINE -> offer.declineNode?.let {
-                    GesturePerformer.tap(this, it.bounds)
-                    recordAction(scored, "manual_decline")
-                }
-                // Offer's on-card timer hit zero — same teardown as the
-                // card vanishing; never leave a pending tap behind.
-                OverlayController.Action.EXPIRED -> offerGone()
-                OverlayController.Action.CANCEL_AUTO -> Unit
+                overlay.hide()
             }
-            overlay.hide()
+
+            // Optional overlay timeout — 0 = stay until the card disappears,
+            // and even then never past MAX_OVERLAY_MS: a verdict for an offer
+            // that is long gone is worse than no verdict.
+            val secs = prefs.overlaySeconds
+            val token = offer.fingerprint
+            hideToken = token
+            hideRunnable?.let { handler.removeCallbacks(it) }
+            val r = Runnable { if (hideToken == token) overlay.hide() }
+            hideRunnable = r
+            handler.postDelayed(r, if (secs > 0) secs * 1000L else MAX_OVERLAY_MS)
         }
 
-        // Optional overlay timeout — 0 = stay until the card disappears, and
-        // even then never past MAX_OVERLAY_MS: a verdict for an offer that is
-        // long gone is worse than no verdict.
-        val secs = prefs.overlaySeconds
-        val token = offer.fingerprint
-        hideToken = token
-        hideRunnable?.let { handler.removeCallbacks(it) }
-        val r = Runnable { if (hideToken == token) overlay.hide() }
-        hideRunnable = r
-        handler.postDelayed(r, if (secs > 0) secs * 1000L else MAX_OVERLAY_MS)
+        if (autoDeclineNow) overlay.hide() else showScorecard()
 
         // Automation: only when the user explicitly enabled it, and only when
         // we actually found the button's bounds. Auto-accept runs on the
         // configured countdown so the driver can cancel.
         if (autoAcceptDelay > 0) {
             scheduleAutoAccept(scored, offer.acceptNode!!, autoAcceptDelay)
-        } else if (prefs.autoDecline && scored.verdict == Verdict.BAD && automationTrusted) {
+        } else if (autoDeclineNow) {
             offer.declineNode?.let { node ->
                 GesturePerformer.tap(this, node.bounds) { ok ->
-                    if (ok) recordAction(scored, "auto_decline")
+                    if (ok) {
+                        recordAction(scored, "auto_decline")
+                    } else if (activeOffer === scored) {
+                        // The tap never dispatched. The card was suppressed in
+                        // favour of this decline, so bring it back rather than
+                        // leave the offer up with no verdict at all.
+                        showScorecard()
+                    }
                 }
             }
         }
@@ -901,6 +922,7 @@ class ShiftlitAccessibilityService : AccessibilityService() {
             currency = o.currencySymbol,
             currencyCode = o.currencyCode,
             rules = failed,
+            key = o.fingerprint,
         ))
     }
 

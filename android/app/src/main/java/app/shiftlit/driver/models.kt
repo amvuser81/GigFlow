@@ -45,9 +45,18 @@ data class DetectedOffer(
     /** Seconds the offer gives the driver to decide, if shown on-card. */
     val expiresInSec: Int? = null,
 ) {
-    /** Stable-ish key for dedupe within a short window. */
+    /**
+     * Stable identity for "the same order" while its card is on screen.
+     *
+     * The card's own countdown ("0:15", "0:14", …) is part of [rawTexts], so
+     * a text-based key changes every second: one Uber offer got rescored,
+     * re-declined and logged three times before it left the screen. What
+     * identifies a job is the app, the money and the trip — none of which move
+     * while the card is up.
+     */
     val fingerprint: String
-        get() = "$appPackage|$payoutCents|${distanceKm}|${durationMin}|${rawTexts.take(6).joinToString("|")}"
+        get() = "$appPackage|$payoutCents|${distanceKm ?: "-"}|" +
+            "${durationMin?.toInt() ?: "-"}|$isReservation"
 }
 
 /** Two outcomes only: every applicable rule passed, or at least one didn't.

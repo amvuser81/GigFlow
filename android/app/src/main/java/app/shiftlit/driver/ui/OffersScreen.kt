@@ -93,6 +93,14 @@ class OffersScreen(ctx: Context, private val p: Palette, private val settings: a
         val verdictLabel = if (good) "Good offer" else "Skipped"
         val app = e.pkg.substringAfterLast('.')
             .replace("driverapp", "Dasher").replaceFirstChar { it.uppercase() }
+        // The metrics line is the same for both verdicts — miles, minutes and
+        // the per-mile rate — so a skipped order can be compared with a good
+        // one at a glance. Why it was skipped gets its own block below.
+        val reasons = e.rules
+            ?.split(';')
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            .orEmpty()
         val stats = buildString {
             if (e.reservation) append("Reserved")
             e.distanceKm?.let { if (isNotEmpty()) append(" · "); append(distText(it)) }
@@ -102,9 +110,6 @@ class OffersScreen(ctx: Context, private val p: Palette, private val settings: a
                 if (isNotEmpty()) append(" · ")
                 append(e.action.replace('_', ' '))
             }
-            // Why it was skipped, on the row itself: that is the whole point of
-            // keeping the failed rules with the entry.
-            e.rules?.let { if (isNotEmpty()) append(" · "); append(it) }
         }
 
         val row = LinearLayout(ctx).apply {
@@ -141,6 +146,22 @@ class OffersScreen(ctx: Context, private val p: Palette, private val settings: a
                 setTextColor(p.label2)
                 setPadding(0, dp(ctx, 1f), 0, 0)
             })
+            if (!good && reasons.isNotEmpty()) {
+                addView(TextView(ctx).apply {
+                    text = if (reasons.size == 1) "Decline reason" else "Decline reasons"
+                    textSize = Ios.T_CAPTION
+                    setTextColor(p.label3)
+                    setPadding(0, dp(ctx, 4f), 0, 0)
+                })
+                reasons.forEach { reason ->
+                    addView(TextView(ctx).apply {
+                        text = "· $reason"
+                        textSize = Ios.T_FOOTNOTE
+                        setTextColor(p.label2)
+                        setPadding(0, dp(ctx, 1f), 0, 0)
+                    })
+                }
+            }
         })
         row.addView(TextView(ctx).apply {
             text = verdictLabel
@@ -188,7 +209,11 @@ class OffersScreen(ctx: Context, private val p: Palette, private val settings: a
             },
             e.perHourCents?.let { "Per hour" to Ios.money(it, e.currency, code(e)) },
             "Action" to (if (e.action == "shown") "Seen only" else e.action.replace('_', ' ')),
-            e.rules?.let { "Rules failed" to it },
+            e.rules?.let { rules ->
+                val list = rules.split(';').map { it.trim() }.filter { it.isNotEmpty() }
+                (if (list.size > 1) "Decline reasons" else "Decline reason") to
+                    list.joinToString("\n")
+            },
         )
         metrics.forEachIndexed { i, (k, v) ->
             if (i > 0) col.addView(Sections.separator(ctx, p))
