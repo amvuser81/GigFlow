@@ -15,9 +15,6 @@ import app.shiftlit.driver.ui.Ios.dp
 import app.shiftlit.driver.ui.Ios.haptic
 import app.shiftlit.driver.ui.Ios.pressable
 
-/** Where diagnostics reports are emailed. This fork reports to its owner, not
- *  to the upstream project. */
-private const val DIAG_EMAIL = "amvuser81@live.com"
 
 /** Assist — assistant status, rules, automation switches, diagnostics. */
 class AssistScreen(
@@ -243,7 +240,7 @@ class AssistScreen(
         col.addView(TextView(ctx).apply {
             text = if (snap.outcome == "miss")
                 "Shiftlit did not parse an offer. If this is a mistake, " +
-                    "\"Teach this screen\" and/or \"Email this report\"."
+                    "\"Teach this screen\" below."
             else "Everything the assistant read on the last screen."
             textSize = Ios.T_FOOTNOTE; setTextColor(p.label2)
             setPadding(0, 0, 0, dp(ctx, 10f))
@@ -360,48 +357,8 @@ class AssistScreen(
                 aiSettingsSheet(ctx, p, settings) { refresh() }
             }
         })
-        // Only for a screen that didn't parse: a report costs the maintainer
-        // time, and a scored screen has nothing to report. Nothing is ever sent
-        // on its own — the button only opens a mail the user must send.
-        if (snap.outcome == "miss") {
-        col.addView(TextView(ctx).apply {
-            text = "Email this report"
-            textSize = Ios.T_BODY; setTypeface(typeface, Typeface.BOLD)
-            setTextColor(p.tint); gravity = android.view.Gravity.CENTER
-            setPadding(0, dp(ctx, 14f), 0, dp(ctx, 6f))
-            setOnClickListener {
-                val pkg = watchedApps.firstOrNull { it.first == name }?.second ?: "?"
-                val report = diagReport(name, pkg, snap)
-                val mail = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_EMAIL, arrayOf(DIAG_EMAIL))
-                    putExtra(
-                        Intent.EXTRA_SUBJECT,
-                        "Shiftlit diagnostics — $name ($pkg) · ${snap.outcome}",
-                    )
-                    putExtra(Intent.EXTRA_TEXT, report.body)
-                    // The same JSON as a file: mail clients wrap, reflow and
-                    // truncate body text, but never the attachment.
-                    diagAttachment(report.json, pkg)?.let {
-                        putExtra(Intent.EXTRA_STREAM, it)
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
-                }
-                ctx.startActivity(Intent.createChooser(mail, "Email diagnostics to $DIAG_EMAIL"))
-            }
-        })
-        col.addView(TextView(ctx).apply {
-            text = "Addressed to $DIAG_EMAIL — readable dump in the body, the raw " +
-                "JSON with every node attached. Nothing is sent until you press send."
-            textSize = Ios.T_CAPTION; setTextColor(p.label3)
-            gravity = android.view.Gravity.CENTER
-            setPadding(0, 0, 0, dp(ctx, 8f))
-        })
-        }
         sheet.add(col).show()
     }
-
-    private data class DiagReport(val json: String, val body: String)
 
     /**
      * The last 20 reads of one app, newest first. The snapshot shows the tree;
@@ -461,132 +418,6 @@ class AssistScreen(
         })
         sheet.add(col).show()
     }
-
-    /**
-     * The whole capture, for a human first and a parser second: a readable
-     * header, the parser's decision trail, one line per node
-     * (index | text | viewId | bounds | clickable), then the same data as JSON.
-     */
-    private fun diagReport(name: String, pkg: String, snap: Diagnostics.Snap): DiagReport {
-        val pi = try {
-            ctx.packageManager.getPackageInfo(ctx.packageName, 0)
-        } catch (_: Exception) { null }
-        val versionName = pi?.versionName ?: "?"
-        @Suppress("DEPRECATION")
-        val legacyCode = pi?.versionCode ?: 0
-        val versionCode = if (android.os.Build.VERSION.SDK_INT >= 28) {
-            pi?.longVersionCode ?: 0L
-        } else legacyCode.toLong()
-        val device = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}" +
-            " · Android ${android.os.Build.VERSION.RELEASE}" +
-            " (SDK ${android.os.Build.VERSION.SDK_INT})"
-        // Bounds are raw screen pixels, so the report has to say what a pixel
-        // is: without the display size an analyser can't tell a 400px row on a
-        // 1080p phone from one on a tablet.
-        val dm = ctx.resources.displayMetrics
-        val iso = java.time.Instant.ofEpochMilli(snap.at).toString()
-
-        val json = org.json.JSONObject()
-            .put("schema", "shiftlit.diag/1")
-            .put("capturedAt", snap.at)
-            .put("capturedAtIso", iso)
-            .put("appVersion", versionName)
-            .put("appVersionCode", versionCode)
-            .put("device", device)
-            .put(
-                "display",
-                org.json.JSONObject()
-                    .put("widthPx", dm.widthPixels)
-                    .put("heightPx", dm.heightPixels)
-                    .put("densityDpi", dm.densityDpi)
-                    .put("density", dm.density.toDouble()),
-            )
-            .put("boundsUnit", "screen pixels")
-            .put(
-                "notes",
-                "Nodes without text or a content description are not captured; " +
-                    "screenNodeCount is the pre-truncation total.",
-            )
-            .put("driverApp", name)
-            .put("package", pkg)
-            .put("outcome", snap.outcome)
-            .put("screenKey", snap.screen)
-            .put("screenNodeCount", snap.nodeCount)
-            .put("capturedNodeCount", snap.nodes.size)
-        val decisions = org.json.JSONArray()
-        snap.decision.forEach { decisions.put(it) }
-        json.put("parserDecision", decisions)
-        val nodes = org.json.JSONArray()
-        snap.nodes.forEachIndexed { i, n ->
-            val b = n.bounds
-            nodes.put(
-                org.json.JSONObject()
-                    .put("index", i)
-                    .put("text", n.text)
-                    .put("viewId", n.viewId ?: org.json.JSONObject.NULL)
-                    .put(
-                        "bounds",
-                        org.json.JSONObject()
-                            .put("left", b.getOrElse(0) { 0 })
-                            .put("top", b.getOrElse(1) { 0 })
-                            .put("right", b.getOrElse(2) { 0 })
-                            .put("bottom", b.getOrElse(3) { 0 }),
-                    )
-                    .put("clickable", n.clickable),
-            )
-        }
-        json.put("nodes", nodes)
-
-        val body = buildString {
-            append("Shiftlit diagnostics\n")
-            append("driver app  ").append(name).append("  (").append(pkg).append(")\n")
-            append("outcome     ").append(snap.outcome).append('\n')
-            append("captured    ").append(iso).append("  epoch ").append(snap.at).append('\n')
-            append("app         Shiftlit ").append(versionName)
-                .append(" (").append(versionCode).append(")\n")
-            append("device      ").append(device).append('\n')
-            append("display     ").append(dm.widthPixels).append('x').append(dm.heightPixels)
-                .append(" px · ").append(dm.densityDpi).append(" dpi\n")
-            append("screen key  ").append(snap.screen).append('\n')
-            append("nodes       ").append(snap.nodes.size)
-            if (snap.nodeCount > snap.nodes.size) append(" of ").append(snap.nodeCount)
-            append(" captured\n")
-            if (snap.decision.isNotEmpty()) {
-                append("\nparser decision\n")
-                snap.decision.forEachIndexed { i, d ->
-                    append("  ").append(i + 1).append(". ").append(d).append('\n')
-                }
-            }
-            append("\nnodes  index | text | viewId | bounds(left,top,right,bottom) | clickable\n")
-            snap.nodes.forEachIndexed { i, n ->
-                val b = n.bounds
-                append("  ").append(i).append(" | ")
-                    .append(n.text.replace('\n', ' ')).append(" | ")
-                    .append(n.viewId ?: "-").append(" | ")
-                    .append(if (b.size == 4) "${b[0]},${b[1]},${b[2]},${b[3]}" else "-")
-                    .append(" | ").append(n.clickable).append('\n')
-            }
-            append("\nmachine-readable JSON\n")
-            append(json.toString(2))
-            append('\n')
-        }
-        return DiagReport(json.toString(2), body)
-    }
-
-    /** Writes the report to cache and returns a shareable content:// URI. */
-    private fun diagAttachment(json: String, pkg: String): android.net.Uri? = try {
-        val dir = java.io.File(ctx.cacheDir, "diagnostics").apply { mkdirs() }
-        // Keep the cache tidy: only the newest few are ever useful.
-        dir.listFiles()?.sortedByDescending { it.lastModified() }?.drop(4)?.forEach { it.delete() }
-        val f = java.io.File(
-            dir,
-            "shiftlit-${pkg.substringAfterLast('.')}-${System.currentTimeMillis()}.json",
-        )
-        f.writeText(json)
-        androidx.core.content.FileProvider.getUriForFile(
-            ctx, "${ctx.packageName}.fileprovider", f,
-        )
-    } catch (_: Exception) { null }
 
     /**
      * Teach a mapping from the captured snapshot: point at the payout, the
@@ -1310,18 +1141,12 @@ class AssistScreen(
 
     private fun creditsCard(): View {
         val card = Sections.card(ctx, p)
-        card.addView(Sections.row(ctx, p,
-            title = "Made by amvuser81",
-            subtitle = "Shiftlit · open source",
-            iconGlyph = "person", iconTint = p.tint,
-        ))
-        card.addView(Sections.separator(ctx, p))
-        card.addView(Sections.row(ctx, p,
-            title = "Project repository",
-            subtitle = "github.com/amvuser81/Shiftlit",
-            iconGlyph = "link", iconTint = p.gray,
-            chevron = true,
-        ) { openUrl("https://github.com/amvuser81/Shiftlit") })
+        card.addView(TextView(ctx).apply {
+            text = "Shiftlit is maintained by amvuser81, Shiftlit is a fork of w0wzahh/GigFlow."
+            textSize = Ios.T_FOOTNOTE
+            setTextColor(p.label2)
+            setPadding(dp(ctx, 16f), dp(ctx, 14f), dp(ctx, 16f), dp(ctx, 14f))
+        })
         return card
     }
 

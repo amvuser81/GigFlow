@@ -62,11 +62,6 @@ There is a third kind, **only if you use the optional AI setup** and tap Ask:
 - Nothing is sent until you tap Ask, and the proposed mapping is only saved
   when you apply it.
 
-If you tap **Send report**, the app builds a JSON file from the diagnostics
-you selected and hands it to your own email app. Nothing is uploaded by
-Shiftlit. You can read the report before sending it, and you choose whether to
-send it at all.
-
 There is no analytics, no advertising, no crash reporting, no telemetry and no
 remote configuration.
 

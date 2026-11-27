@@ -40,9 +40,8 @@ no sync and no token to attack.
   packages declared in `accessibility_service_config.xml`; events from other
   packages are ignored.
 - **No screen exfiltration.** Screen text is parsed in memory. The stored
-  snapshot is capped and stays local; the only ways it leaves the phone are a
-  report the user exports and sends themselves, or the diagnostics they
-  explicitly hand to AI setup and ask about.
+  snapshot is capped and stays local; the only way it leaves the phone is the
+  diagnostics the user explicitly hands to AI setup and asks about.
 - **Updater.** The app reads this repository's latest GitHub release and only
   accepts an asset whose name starts with `shiftlit-`. Installs go through the
   system installer, which verifies the signing certificate, so an APK signed by
