@@ -20,6 +20,16 @@ android {
     }
 
     signingConfigs {
+        // Public, checked-in debug key. Without it every CI runner generates
+        // its own ~/.android/debug.keystore, so a new debug APK can't update
+        // the previous one. This key is intentionally not secret.
+        create("debugStable") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+
         if (releaseKeystore != null) {
             create("release") {
                 storeFile = file(releaseKeystore)
@@ -40,6 +50,7 @@ android {
         }
         debug {
             applicationIdSuffix = ".debug"
+            signingConfig = signingConfigs.getByName("debugStable")
         }
     }
 

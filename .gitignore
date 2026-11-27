@@ -56,6 +56,8 @@ next-env.d.ts
 # signing material — the release key lives only in CI secrets
 *.jks
 *.keystore
+# ...except the public debug key, which has to stay stable across CI runs
+!android/app/debug.keystore
 
 # Local release builds (uploaded to GitHub Releases)
 releases/
