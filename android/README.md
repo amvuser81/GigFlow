@@ -95,6 +95,10 @@ gradle assembleDebug   # → app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
+Debug builds are signed with the committed `app/debug.keystore` (public,
+password `android`) so successive CI debug APKs update in place instead of
+requiring an uninstall. It is a debug-only key and must never sign a release.
+
 ### Debug seed for the AI preview
 
 A debuggable build accepts a seeded Wolt capture that the parser deliberately
