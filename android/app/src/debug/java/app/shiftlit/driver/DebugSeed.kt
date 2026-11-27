@@ -1,15 +1,13 @@
 package app.shiftlit.driver
 
 import android.content.Context
-import android.content.pm.ApplicationInfo
 
 /**
- * Debug-only: seed one diagnostics capture that the heuristics miss, so the AI
- * screen-fix sheet can be exercised without waiting for a live offer.
+ * Debug source set: seed one diagnostics capture that the heuristics miss, so
+ * the AI screen-fix sheet can be exercised without waiting for a live offer.
  *
- * Only runs in a debuggable build and only when MainActivity is started with
- * the [EXTRA] boolean, so a normal debug run is unaffected. Release builds
- * return immediately.
+ * Runs only when MainActivity is started with the [EXTRA] boolean, so a normal
+ * debug run is unaffected. Release builds link the no-op stub instead.
  */
 object DebugSeed {
 
@@ -20,7 +18,7 @@ object DebugSeed {
     private const val PKG = "com.wolt.courierapp"
 
     fun seedIfRequested(ctx: Context, requested: Boolean, settings: SettingsRepository) {
-        if (!requested || !isDebuggable(ctx)) return
+        if (!requested) return
         // Bare numbers with no unit words: the heuristic parser refuses this
         // card, exactly the kind of miss the AI fix is meant for.
         val nodes = listOf(
@@ -45,6 +43,4 @@ object DebugSeed {
         text: String, id: String, l: Int, t: Int, r: Int, b: Int, clickable: Boolean,
     ) = OfferParser.FlatNode(text, id, Bounds(l, t, r, b), clickable)
 
-    private fun isDebuggable(ctx: Context): Boolean =
-        (ctx.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
 }

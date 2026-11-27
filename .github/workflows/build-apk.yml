@@ -39,13 +39,14 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
-      - name: Build Debug APK and run parser tests
+      - name: Build debug and release APKs, run parser tests
         working-directory: android
         run: |
           set -o pipefail
           LOG="$RUNNER_TEMP/gradle-build.log"
           for attempt in 1 2; do
-            if ./gradlew --no-daemon assembleDebug testDebugUnitTest 2>&1 | tee "$LOG"; then exit 0; fi
+            # assembleRelease checks the release stubs too; unsigned is fine here.
+            if ./gradlew --no-daemon assembleDebug assembleRelease testDebugUnitTest 2>&1 | tee "$LOG"; then exit 0; fi
             if [ "$attempt" = 2 ]; then exit 1; fi
             if grep -qiE "429|Could not resolve|Could not GET|timed out|Connection reset" "$LOG"; then
               echo "::warning::Transient dependency failure (Maven Central) on attempt $attempt — retrying once in 30s"

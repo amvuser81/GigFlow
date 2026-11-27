@@ -1,6 +1,7 @@
 package app.shiftlit.driver
 
 import android.app.Activity
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.view.View
@@ -105,6 +106,16 @@ class MainActivity : Activity() {
 
         show(0)
         UpdateChecker.promptIfNewer(this, p)
+    }
+
+    /** A seed request while the app is already running re-seeds and refreshes. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        DebugSeed.seedIfRequested(
+            this, intent.getBooleanExtra(DebugSeed.EXTRA, false), settings,
+        )
+        if (::assist.isInitialized) refresh(current)
     }
 
     private fun show(i: Int) {

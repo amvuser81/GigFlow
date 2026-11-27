@@ -95,6 +95,20 @@ gradle assembleDebug   # → app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
+### Debug seed for the AI preview
+
+A debuggable build accepts a seeded Wolt capture that the parser deliberately
+misses, so the AI screen-fix preview can be tried without a live offer. Works
+whether the debug app is running or not:
+
+```bash
+adb shell am start -n app.shiftlit.driver.debug/app.shiftlit.driver.MainActivity --ez seed_diag true
+```
+
+Then open Assistant → Diagnostics → Wolt Courier Partner and tap
+"Ask … to fix this screen". The seed only selects OpenRouter as the provider;
+the debug app still needs its own API key.
+
 ## Data handling
 
 - Everything is on-device: screen content, offers, records, GPS. The network
