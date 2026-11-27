@@ -433,6 +433,9 @@ class GigFlowAccessibilityService : AccessibilityService() {
             return
         }
         Diagnostics.record(this, pkg, "offer", nodes, decision)
+        // A card this screen could parse proves the bar's job here is done;
+        // if the same screen later misses, it should get to ask again.
+        lastMissKey = ""
 
         // Same card still on screen — don't rescore/re-overlay every frame.
         if (offer.fingerprint == lastFingerprint && now - lastSeenAt < 60_000) {
