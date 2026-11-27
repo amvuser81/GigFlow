@@ -791,7 +791,7 @@ class AssistScreen(
         val (r2, _) = Sections.switchRow(ctx, p, "Auto-accept good offers",
             "Only when every rule passes", settings.autoAccept) { settings.autoAccept = it }
         val (r3, _) = Sections.switchRow(ctx, p, "Auto-decline bad offers",
-            "Only when most rules fail", settings.autoDecline) { settings.autoDecline = it }
+            "As soon as any rule fails", settings.autoDecline) { settings.autoDecline = it }
         val (r4, _) = Sections.switchRow(ctx, p, "Voice alerts",
             "Speak verdicts aloud as offers appear", settings.voiceAlerts) { settings.voiceAlerts = it }
         val (r5, _) = Sections.switchRow(ctx, p, "Auto-track mileage",

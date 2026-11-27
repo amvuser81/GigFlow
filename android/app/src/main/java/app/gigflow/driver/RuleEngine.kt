@@ -46,10 +46,13 @@ object RuleEngine {
             if (offer.distanceKm <= prefs.maxDistanceKm) score++ else reasons.add("too far")
         }
 
+        // Strict: one missed rule is enough. Auto-decline keys off BAD, so a
+        // card that fails any threshold is declined instead of needing most of
+        // them to fail — the old majority band would take a $2.00 job that
+        // cleared per-mile and per-hour but sat under the payout floor.
         val verdict = when {
-            checks == 0 -> Verdict.MEH
+            checks == 0 -> Verdict.MEH // nothing readable to judge (unreachable today: the floor always runs)
             score == checks -> Verdict.GOOD
-            score >= checks / 2 -> Verdict.MEH
             else -> Verdict.BAD
         }
 
