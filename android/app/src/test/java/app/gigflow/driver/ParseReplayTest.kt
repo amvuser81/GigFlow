@@ -105,7 +105,7 @@ class ParseReplayTest {
             distance = at("12,4"),
             duration = at("22"),
         )
-        val offer = OfferParser.parse(f.pkg, f.nodes, hint = hint)
+        val offer = OfferParser.parse(f.pkg, f.nodes, hint = hint, unit = "KM")
         assertNotNull("the taught mapping should read this screen", offer)
         val o = offer!!
         assertEquals(185_000, o.payoutCents)
@@ -162,6 +162,54 @@ class ParseReplayTest {
         assertNull(
             "a control that moved is not the one that was taught",
             ParseHints.resolve(nodes - x, anchor),
+        )
+    }
+
+    @Test
+    fun taughtBareDistancesFollowTheConfiguredUnit() {
+        val f = ReplayFixtures.bareNumbers
+        val hint = ParseHints.Hint(
+            pkg = f.pkg,
+            screen = ParseHints.screenKey(f.nodes),
+            payout = ParseHints.anchor(f.nodes, f.nodes.indexOfFirst { it.text == "1 850 Ft" }),
+            distance = ParseHints.anchor(f.nodes, f.nodes.indexOfFirst { it.text == "12,4" }),
+        )
+        // A bare "12,4" on a US card is 12.4 mi; the parser stores km.
+        val mi = OfferParser.parse(f.pkg, f.nodes, hint = hint, unit = "MI")!!
+        assertEquals(20.0, mi.distanceKm!!, 0.001)
+        val km = OfferParser.parse(f.pkg, f.nodes, hint = hint, unit = "KM")!!
+        assertEquals(12.4, km.distanceKm!!, 0.001)
+    }
+
+    @Test
+    fun trailingDollarCardsParseWithoutAConfiguredCurrencyRegex() {
+        // The built-in matcher only knew a prefixed "$", so "18,50 $" fell
+        // through entirely and the card read as having no money on it.
+        val nodes = listOf(
+            OfferParser.FlatNode("18,50 $", null, Bounds(0, 0, 800, 80), false),
+            OfferParser.FlatNode("12,4 km", null, Bounds(0, 80, 800, 140), false),
+            OfferParser.FlatNode("22 perc", null, Bounds(0, 140, 800, 200), false),
+        )
+        val offer = OfferParser.parse("app.test", nodes)
+        assertNotNull("a trailing $ must match the built-in money matcher", offer)
+        assertEquals(1_850, offer!!.payoutCents)
+    }
+
+    @Test
+    fun unlabeledNodesDoNotShiftIndexAnchorsOrTextKeys() {
+        fun labeled(t: String) = OfferParser.FlatNode(t, null, Bounds(0, 0, 10, 10), false)
+        fun unlabeled() = OfferParser.FlatNode("", null, Bounds(0, 0, 10, 10), true)
+        val plain = listOf(labeled("A"), labeled("B"))
+        val withBlank = listOf(labeled("A"), unlabeled(), labeled("B"))
+        assertEquals(
+            "a blank node must not change a text-only screen key",
+            ParseHints.screenKey(plain),
+            ParseHints.screenKey(withBlank),
+        )
+        assertEquals(
+            "an index anchor saved before blanks were listed must still land",
+            "B",
+            ParseHints.resolve(withBlank, ParseHints.anchor(plain, 1))?.text,
         )
     }
 
@@ -271,7 +319,7 @@ class ParseReplayTest {
             distance = ParseHints.anchor(nodes, 2),
             duration = ParseHints.anchor(nodes, 3),
         )
-        val offer = OfferParser.parse(pkg, nodes, hint = fresh)
+        val offer = OfferParser.parse(pkg, nodes, hint = fresh, unit = "KM")
         assertNotNull(offer)
         assertEquals(360_000, offer!!.payoutCents)
         assertNull("a fresh mapping is not out of date", ParseHints.staleReason(fresh, nodes))

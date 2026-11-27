@@ -47,7 +47,10 @@ object ParseHints {
             // text or id to point at; where it sits on screen is the only handle
             // left, and a corner control keeps that from offer to offer.
             n.text.isEmpty() -> "pos:${b.left},${b.top},${b.right},${b.bottom}"
-            id == null -> "idx:$index"
+            // Index among *labeled* nodes only: unlabeled clickables are
+            // interleaved into the tree now, and counting them would shift
+            // every index anchor saved before they were listed.
+            id == null -> "idx:" + nodes.take(index).count { it.text.isNotEmpty() }
             else -> {
                 val occurrence = nodes.take(index).count { it.viewId == id }
                 "id:$id@$occurrence"
@@ -58,7 +61,8 @@ object ParseHints {
     fun resolve(nodes: List<OfferParser.FlatNode>, anchor: String?): OfferParser.FlatNode? {
         if (anchor.isNullOrEmpty()) return null
         if (anchor.startsWith("idx:")) {
-            return nodes.getOrNull(anchor.substring(4).toIntOrNull() ?: return null)
+            val n = anchor.substring(4).toIntOrNull() ?: return null
+            return nodes.filter { it.text.isNotEmpty() }.getOrNull(n)
         }
         if (anchor.startsWith("pos:")) {
             val b = anchor.substring(4).split(',').map { it.toIntOrNull() ?: return null }
@@ -120,7 +124,9 @@ object ParseHints {
     fun screenKey(nodes: List<OfferParser.FlatNode>): String {
         val ids = nodes.mapNotNull { it.viewId }.distinct().sorted().take(40)
         if (ids.isNotEmpty()) return "v:" + ids.joinToString(",")
-        val shape = nodes.map { DIGITS.replace(it.text, "#") }.distinct().take(8)
+        val shape = nodes.map { DIGITS.replace(it.text, "#") }
+            .filter { it.isNotEmpty() } // unlabeled nodes must not change the key
+            .distinct().take(8)
         return "t:" + shape.joinToString("|")
     }
 

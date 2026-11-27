@@ -61,6 +61,9 @@ class GigFlowAccessibilityService : AccessibilityService() {
         /** A verdict never outlives this, even if the card behind it lingers. */
         private const val MAX_OVERLAY_MS = 30_000L
 
+        /** Package name of the synthetic offer from the Assist screen. */
+        private const val TEST_PKG = "app.gigflow.test"
+
         /** Live instance while the service is enabled — null otherwise. */
         @Volatile var instance: GigFlowAccessibilityService? = null
             private set
@@ -85,7 +88,7 @@ class GigFlowAccessibilityService : AccessibilityService() {
         handler.post {
             val dead = NodeRef(Bounds(8, 1150, 14, 1190), "test")
             val o = DetectedOffer(
-                appPackage = "app.gigflow.test",
+                appPackage = TEST_PKG,
                 payoutCents = (12.50 * 100).toInt(),
                 tipCents = 200,
                 distanceKm = 4.2,
@@ -180,7 +183,11 @@ class GigFlowAccessibilityService : AccessibilityService() {
         // screen, so drop it. This is what hides the overlay when the user
         // leaves the app, opens the launcher, or switches to another app.
         if (pkg !in watched) {
-            if (activeOffer != null) offerGone()
+            // A real verdict dies with its app. The synthetic test offer is the
+            // exception — it is shown while this app is in front precisely so
+            // the user can watch it run, so our own events must not wipe it.
+            val synthetic = activeOffer?.offer?.appPackage == TEST_PKG
+            if (activeOffer != null && !synthetic) offerGone()
             return
         }
 
@@ -226,6 +233,7 @@ class GigFlowAccessibilityService : AccessibilityService() {
         if (hint != null) decision.add("taught hint on this screen")
         val offer = OfferParser.parse(
             pkg, nodes, extraRe, curSymbol, settings.currencyCode, decision, hint,
+            settings.distanceUnit,
         )
         if (offer == null) {
             // A screen with a money figure but no parse is a "miss" — the

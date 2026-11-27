@@ -34,7 +34,7 @@ object OfferParser {
         "([$€£₺₴]|USD|EUR|GBP)\\s*(\\d(?:[\\d., '\\u00A0]{0,12}\\d)?)|" +
             "(\\d(?:[\\d., '\\u00A0]{0,12}\\d)?)\\s*" +
             "(Ft|HUF|huf|EUR|eur|kr|Kr|KR|SEK|NOK|DKK|PLN|pln|zł|Zł|RON|ron|" +
-            "lei|CZK|czk|Kč|TL|TRY|uah|UAH|₺|₴|USD|usd)(?![\\p{L}\\p{N}])",
+            "lei|CZK|czk|Kč|TL|TRY|uah|UAH|₺|₴|USD|usd|\\$|€|£)(?![\\p{L}\\p{N}])",
     )
     private val CURRENCY_WORDS = mapOf(
         "$" to "$", "€" to "€", "£" to "£",
@@ -214,11 +214,13 @@ object OfferParser {
         trace: MutableList<String>? = null,
         /** User-taught node mapping for a screen the heuristics can't read. */
         hint: ParseHints.Hint? = null,
+        /** Display unit for a bare taught distance: "MI" (default) or "KM". */
+        unit: String = "MI",
     ): DetectedOffer? {
         // Hints only ever apply where the heuristics fail. A screen that already
         // parses is never re-read through a taught mapping, so a wrong hint can
         // neither change nor break a result that works today.
-        val auto = parseOnce(pkg, nodes, extra, extraSymbol, currencyCode, trace, null)
+        val auto = parseOnce(pkg, nodes, extra, extraSymbol, currencyCode, trace, null, unit)
         if (auto != null) {
             // The amounts are settled: the heuristics own them, and no taught
             // mapping may change a price. Taught *buttons* still apply — a card
@@ -253,7 +255,7 @@ object OfferParser {
         if (legacyRoles.isNotEmpty()) {
             trace?.add("hint: saved mapping is out of date (${legacyRoles.joinToString("/")})")
         }
-        return parseOnce(pkg, nodes, extra, extraSymbol, currencyCode, trace, hint)
+        return parseOnce(pkg, nodes, extra, extraSymbol, currencyCode, trace, hint, unit)
     }
 
     private fun parseOnce(
@@ -264,6 +266,7 @@ object OfferParser {
         currencyCode: String?,
         trace: MutableList<String>?,
         hint: ParseHints.Hint?,
+        unit: String,
     ): DetectedOffer? {
         val texts = nodes.map { it.text }
 
@@ -319,7 +322,7 @@ object OfferParser {
 
         // Distances: take the largest plausible one (total trip distance).
         val distanceKm = hint?.distance?.let { a -> ParseHints.resolve(nodes, a) }
-            ?.let { lenientDistance(it.text) }?.takeIf { it in 0.2..500.0 }
+            ?.let { lenientDistance(it.text, unit) }?.takeIf { it in 0.2..500.0 }
             ?: texts.mapNotNull { distanceOf(it) }
                 .filter { it in 0.2..500.0 }.maxOrNull()
 
@@ -457,8 +460,11 @@ object OfferParser {
         return parseAmount(raw)?.let { it to symbol }
     }
 
-    private fun lenientDistance(text: String): Double? =
-        distanceOf(text) ?: lenientNumber(text) // bare number on a distance row = km
+    /** A taught distance row. A bare number is in the app's unit — miles by
+     *  default, since a US card shows "8.2" and means 8.2 mi — and the parser
+     *  works in km, so miles are converted here. */
+    private fun lenientDistance(text: String, unit: String): Double? =
+        distanceOf(text) ?: lenientNumber(text)?.let { if (unit == "KM") it else it * 1.609344 }
 
     private fun lenientDuration(text: String): Double? {
         durationOf(text)?.let { return it }
