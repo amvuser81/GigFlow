@@ -190,7 +190,7 @@ object OfferParser {
         val viewId: String?,
         val bounds: Bounds,
         val clickable: Boolean,
-        /** Android 12+ redaction: the view declares its content sensitive, and
+        /** Android 14+ redaction: the view declares its content sensitive, and
          *  a service that isn't an accessibility tool receives it without any
          *  text. See the service config's isAccessibilityTool. */
         val dataSensitive: Boolean = false,
@@ -210,8 +210,10 @@ object OfferParser {
             n.getBoundsInScreen(r)
             val viewId = n.viewIdResourceName
             val clickable = n.isClickable
+            // The flag exists earlier but is only enforced from Android 14;
+            // below that it would be a method that isn't there.
             val dataSensitive =
-                android.os.Build.VERSION.SDK_INT >= 31 && n.isAccessibilityDataSensitive
+                android.os.Build.VERSION.SDK_INT >= 34 && n.isAccessibilityDataSensitive
             for (i in 0 until n.childCount) {
                 n.getChild(i)?.let(stack::add)
             }
