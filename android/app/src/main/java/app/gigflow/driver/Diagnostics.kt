@@ -40,6 +40,9 @@ object Diagnostics {
         val outcome: String, // "offer" | "miss" | "idle"
         val texts: List<String>,
         val nodes: List<Node> = emptyList(),
+        /** Nodes on the screen before [MAX_NODES] truncation — the report says
+         *  "80 of 143 captured" rather than implying that was all of it. */
+        val nodeCount: Int = 0,
         /** [ParseHints.screenKey] of the full node list at capture time — the
          *  teach flow keys a hint on this. Empty for old/text-only snapshots. */
         val screen: String = "",
@@ -56,7 +59,10 @@ object Diagnostics {
 
     /** Text-only snapshot — used when the window itself wasn't readable. */
     fun record(ctx: Context, pkg: String, outcome: String, texts: List<String>) =
-        write(ctx, pkg, outcome, texts, emptyList(), "", emptyList())
+        write(
+            ctx, pkg, outcome, texts = texts,
+            nodes = emptyList(), nodeCount = 0, screen = "", decision = emptyList(),
+        )
 
     /** Full snapshot: every node plus the parser's decision trail. */
     fun record(
@@ -73,6 +79,7 @@ object Diagnostics {
         // Keyed from the full list: the cap below could drop the ids a
         // signature computed later from the snapshot would rely on.
         screen = ParseHints.screenKey(nodes),
+        nodeCount = nodes.size,
         nodes = nodes.take(MAX_NODES).map { n ->
             Node(
                 text = n.text,
@@ -90,6 +97,7 @@ object Diagnostics {
         outcome: String,
         texts: List<String>,
         nodes: List<Node>,
+        nodeCount: Int,
         screen: String,
         decision: List<String>,
     ) {
@@ -126,6 +134,7 @@ object Diagnostics {
             .put("outcome", outcome)
             .put("texts", joined)
             .put("screen", screen)
+            .put("nodeCount", nodeCount)
             .put("nodes", nodeArr)
             .put("decision", decisionArr)
         prefs.edit().putString(KEY, all.put(pkg, o).toString()).apply()
@@ -152,6 +161,7 @@ object Diagnostics {
                     }
                 }
             } ?: emptyList(),
+            nodeCount = o.optInt("nodeCount"),
             screen = o.optString("screen"),
             decision = o.optJSONArray("decision")?.let { arr ->
                 (0 until arr.length()).map { arr.optString(it) }

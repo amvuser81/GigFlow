@@ -178,6 +178,22 @@ object Currencies {
         entryFor(symbol, code)?.let { PER_USD[it.code] } ?: 1.0
 
     /**
+     * ISO code to render a stored amount with: the code saved beside it, or the
+     * configured one when the amount is in the configured currency.
+     *
+     * Log rows written before the code was stored only kept the symbol, so
+     * "¥" came back as JPY and the feed showed "¥40" instead of "¥40.00".
+     * A stored code always wins, even after the driver changes settings.
+     */
+    fun codeFor(
+        symbol: String,
+        stored: String?,
+        configuredSymbol: String,
+        configuredCode: String,
+    ): String? = stored?.takeIf { it.isNotBlank() }
+        ?: configuredCode.takeIf { symbol == configuredSymbol }
+
+    /**
      * Registry entry for an amount: the ISO code wins over the symbol.
      *
      * "¥" is registered for JPY and CNY alike, "kr" for SEK/NOK/DKK, "L" for

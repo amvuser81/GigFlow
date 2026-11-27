@@ -24,6 +24,9 @@ object OfferLog {
         val lng: Double? = null,
         val reservation: Boolean = false,
         val currency: String = "$",
+        /** ISO code when it was known at capture. Rows written before this
+         *  existed leave it null and the feed falls back to the setting. */
+        val currencyCode: String? = null,
     )
 
     private fun load(prefs: android.content.SharedPreferences): JSONArray = try {
@@ -49,6 +52,7 @@ object OfferLog {
         e.lng?.let { o.put("lng", it) }
         if (e.reservation) o.put("reservation", true)
         o.put("currency", e.currency)
+        e.currencyCode?.let { o.put("code", it) }
         val next = JSONArray()
         next.put(o)
         for (i in 0 until minOf(arr.length(), MAX - 1)) next.put(arr.get(i))
@@ -74,6 +78,7 @@ object OfferLog {
                 lng = if (o.has("lng")) o.getDouble("lng") else null,
                 reservation = o.optBoolean("reservation"),
                 currency = o.optString("currency", "$"),
+                currencyCode = o.optString("code").ifBlank { null },
             )
         }
     }

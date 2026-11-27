@@ -257,6 +257,7 @@ class GigFlowAccessibilityService : AccessibilityService() {
             lng = loc?.second,
             reservation = offer.isReservation,
             currency = offer.currencySymbol,
+            currencyCode = offer.currencyCode,
         ))
 
         // Mystro-style voice alert for the verdict, when enabled.
@@ -444,6 +445,7 @@ class GigFlowAccessibilityService : AccessibilityService() {
             lat = null, lng = null,
             reservation = o.isReservation,
             currency = o.currencySymbol,
+            currencyCode = o.currencyCode,
         ))
     }
 

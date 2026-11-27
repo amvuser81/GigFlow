@@ -43,6 +43,23 @@ class ParseReplayTest {
     }
 
     @Test
+    fun storedHistoryResolvesItsCurrency() {
+        // New rows carry the code.
+        assertEquals("CNY", Currencies.codeFor("¥", "CNY", "¥", "CNY"))
+        // Old rows didn't: fall back to the setting when the symbol is the
+        // configured one, and stay null for a foreign card.
+        assertEquals("CNY", Currencies.codeFor("¥", null, "¥", "CNY"))
+        assertNull(Currencies.codeFor("$", null, "¥", "CNY"))
+        // A stored code outlives a settings change.
+        assertEquals("EUR", Currencies.codeFor("€", "EUR", "¥", "CNY"))
+        // End to end: how the feed renders a CNY row written before codes.
+        assertEquals(
+            "¥40.00",
+            Currencies.format(4_000, "¥", Currencies.codeFor("¥", null, "¥", "CNY")),
+        )
+    }
+
+    @Test
     fun formattingAndSpeechFollowTheIsoCodeToo() {
         // JPY writes whole yen and is spoken as "yen"; CNY has cents.
         assertEquals("¥40", Currencies.format(4_000, "¥", "JPY"))

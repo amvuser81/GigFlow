@@ -15,6 +15,10 @@ import app.gigflow.driver.ui.Ios.dp
 import app.gigflow.driver.ui.Ios.haptic
 import app.gigflow.driver.ui.Ios.pressable
 
+/** Where diagnostics reports are emailed. This fork reports to its owner, not
+ *  to the upstream project. */
+private const val DIAG_EMAIL = "amvuser81@live.com"
+
 /** Assist — assistant status, rules, automation switches, diagnostics. */
 class AssistScreen(
     ctx: Context,
@@ -230,34 +234,125 @@ class AssistScreen(
                 }
             })
         }
-        // Share the raw node dump — [tap]/view-id markers included — so a
-        // parse miss can be reported as text, not just a screenshot.
+        // Mail the full dump to the maintainer: every node with its view id,
+        // bounds and clickability, the parser's decision trail, and the same
+        // data as JSON so a tool (or an AI) can parse it.
         col.addView(TextView(ctx).apply {
-            text = "Share this report"
+            text = "Email this report"
             textSize = Ios.T_BODY; setTypeface(typeface, Typeface.BOLD)
             setTextColor(p.tint); gravity = android.view.Gravity.CENTER
             setPadding(0, dp(ctx, 14f), 0, dp(ctx, 6f))
             setOnClickListener {
-                val body = buildString {
-                    append("$name · outcome=${snap.outcome}\n")
-                    append("pkg=${
-                        watchedApps.firstOrNull { it.first == name }?.second ?: "?"
-                    }\n")
-                    append("app=${ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName}\n\n")
-                    snap.texts.forEach { append("· $it\n") }
-                    if (snap.decision.isNotEmpty()) {
-                        append("\nparser:\n")
-                        snap.decision.forEach { append("· $it\n") }
-                    }
-                }
-                val send = Intent(Intent.ACTION_SEND).apply {
+                val pkg = watchedApps.firstOrNull { it.first == name }?.second ?: "?"
+                val mail = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
-                    putExtra(Intent.EXTRA_TEXT, body)
+                    putExtra(Intent.EXTRA_EMAIL, arrayOf(DIAG_EMAIL))
+                    putExtra(
+                        Intent.EXTRA_SUBJECT,
+                        "GigFlow diagnostics — $name ($pkg) · ${snap.outcome}",
+                    )
+                    putExtra(Intent.EXTRA_TEXT, diagReport(name, pkg, snap))
                 }
-                ctx.startActivity(Intent.createChooser(send, "Share diagnostics"))
+                ctx.startActivity(Intent.createChooser(mail, "Email diagnostics to $DIAG_EMAIL"))
             }
         })
+        col.addView(TextView(ctx).apply {
+            text = "Addressed to $DIAG_EMAIL — the report fills the body; just send."
+            textSize = Ios.T_CAPTION; setTextColor(p.label3)
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, 0, 0, dp(ctx, 8f))
+        })
         sheet.add(col).show()
+    }
+
+    /**
+     * The whole capture, for a human first and a parser second: a readable
+     * header, the parser's decision trail, one line per node
+     * (index | text | viewId | bounds | clickable), then the same data as JSON.
+     */
+    private fun diagReport(name: String, pkg: String, snap: Diagnostics.Snap): String {
+        val pi = try {
+            ctx.packageManager.getPackageInfo(ctx.packageName, 0)
+        } catch (_: Exception) { null }
+        val versionName = pi?.versionName ?: "?"
+        @Suppress("DEPRECATION")
+        val legacyCode = pi?.versionCode ?: 0
+        val versionCode = if (android.os.Build.VERSION.SDK_INT >= 28) {
+            pi?.longVersionCode ?: 0L
+        } else legacyCode.toLong()
+        val device = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}" +
+            " · Android ${android.os.Build.VERSION.RELEASE}" +
+            " (SDK ${android.os.Build.VERSION.SDK_INT})"
+        val iso = java.time.Instant.ofEpochMilli(snap.at).toString()
+
+        val json = org.json.JSONObject()
+            .put("schema", "gigflow.diag/1")
+            .put("capturedAt", snap.at)
+            .put("capturedAtIso", iso)
+            .put("appVersion", versionName)
+            .put("appVersionCode", versionCode)
+            .put("device", device)
+            .put("driverApp", name)
+            .put("package", pkg)
+            .put("outcome", snap.outcome)
+            .put("screenKey", snap.screen)
+            .put("screenNodeCount", snap.nodeCount)
+            .put("capturedNodeCount", snap.nodes.size)
+        val decisions = org.json.JSONArray()
+        snap.decision.forEach { decisions.put(it) }
+        json.put("parserDecision", decisions)
+        val nodes = org.json.JSONArray()
+        snap.nodes.forEachIndexed { i, n ->
+            val b = n.bounds
+            nodes.put(
+                org.json.JSONObject()
+                    .put("index", i)
+                    .put("text", n.text)
+                    .put("viewId", n.viewId ?: org.json.JSONObject.NULL)
+                    .put(
+                        "bounds",
+                        org.json.JSONObject()
+                            .put("left", b.getOrElse(0) { 0 })
+                            .put("top", b.getOrElse(1) { 0 })
+                            .put("right", b.getOrElse(2) { 0 })
+                            .put("bottom", b.getOrElse(3) { 0 }),
+                    )
+                    .put("clickable", n.clickable),
+            )
+        }
+        json.put("nodes", nodes)
+
+        return buildString {
+            append("GigFlow diagnostics\n")
+            append("driver app  ").append(name).append("  (").append(pkg).append(")\n")
+            append("outcome     ").append(snap.outcome).append('\n')
+            append("captured    ").append(iso).append("  epoch ").append(snap.at).append('\n')
+            append("app         GigFlow ").append(versionName)
+                .append(" (").append(versionCode).append(")\n")
+            append("device      ").append(device).append('\n')
+            append("screen key  ").append(snap.screen).append('\n')
+            append("nodes       ").append(snap.nodes.size)
+            if (snap.nodeCount > snap.nodes.size) append(" of ").append(snap.nodeCount)
+            append(" captured\n")
+            if (snap.decision.isNotEmpty()) {
+                append("\nparser decision\n")
+                snap.decision.forEachIndexed { i, d ->
+                    append("  ").append(i + 1).append(". ").append(d).append('\n')
+                }
+            }
+            append("\nnodes  index | text | viewId | bounds(left,top,right,bottom) | clickable\n")
+            snap.nodes.forEachIndexed { i, n ->
+                val b = n.bounds
+                append("  ").append(i).append(" | ")
+                    .append(n.text.replace('\n', ' ')).append(" | ")
+                    .append(n.viewId ?: "-").append(" | ")
+                    .append(if (b.size == 4) "${b[0]},${b[1]},${b[2]},${b[3]}" else "-")
+                    .append(" | ").append(n.clickable).append('\n')
+            }
+            append("\nmachine-readable JSON\n")
+            append(json.toString(2))
+            append('\n')
+        }
     }
 
     /**

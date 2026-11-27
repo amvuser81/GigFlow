@@ -7,6 +7,7 @@ import android.view.View
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import app.gigflow.driver.Currencies
 import app.gigflow.driver.OfferLog
 import app.gigflow.driver.ui.Ios.Palette
 import app.gigflow.driver.ui.Ios.dp
@@ -23,6 +24,12 @@ class OffersScreen(ctx: Context, private val p: Palette, private val settings: a
     private var filter = 0 // 0 all, 1 good, 2 meh, 3 bad
 
     private fun isKm() = settings.distanceUnit == "KM"
+
+    /** Stored code wins; rows from before it existed fall back to the setting
+     *  when the amount is in the configured currency. */
+    private fun code(e: OfferLog.Entry) = Currencies.codeFor(
+        e.currency, e.currencyCode, settings.currencySymbol, settings.currencyCode,
+    )
     private fun distText(km: Double) =
         "%.1f %s".format(if (isKm()) km else km * 0.621371, if (isKm()) "km" else "mi")
     private val suffixCurrencies = setOf("Ft", "kr", "zł", "lei", "Kč", "₺", "₴")
@@ -111,7 +118,7 @@ class OffersScreen(ctx: Context, private val p: Palette, private val settings: a
             addView(LinearLayout(ctx).apply {
                 orientation = LinearLayout.HORIZONTAL
                 addView(TextView(ctx).apply {
-                    text = Ios.money(e.payoutCents, e.currency)
+                    text = Ios.money(e.payoutCents, e.currency, code(e))
                     textSize = Ios.T_HEADLINE
                     setTypeface(typeface, Typeface.BOLD)
                     setTextColor(p.label)
@@ -156,7 +163,7 @@ class OffersScreen(ctx: Context, private val p: Palette, private val settings: a
                     .apply { rightMargin = dp(ctx, 10f) }
             })
             addView(TextView(ctx).apply {
-                text = "${Ios.money(e.payoutCents, e.currency)} · $verdictLabel"
+                text = "${Ios.money(e.payoutCents, e.currency, code(e))} · $verdictLabel"
                 textSize = Ios.T_HEADLINE; setTypeface(typeface, Typeface.BOLD); setTextColor(p.label)
             })
         })
@@ -171,7 +178,7 @@ class OffersScreen(ctx: Context, private val p: Palette, private val settings: a
             e.distanceKm?.let { "Distance" to distText(it) },
             e.durationMin?.let { "Duration" to "${it.toInt()} min" },
             e.perMileCents?.let { "Per ${if (isKm()) "kilometre" else "mile"}" to perDistText(it, e.currency).substringBefore('/') },
-            e.perHourCents?.let { "Per hour" to Ios.money(it, e.currency) },
+            e.perHourCents?.let { "Per hour" to Ios.money(it, e.currency, code(e)) },
             "Action" to (if (e.action == "shown") "Seen only" else e.action.replace('_', ' ')),
         )
         metrics.forEachIndexed { i, (k, v) ->
