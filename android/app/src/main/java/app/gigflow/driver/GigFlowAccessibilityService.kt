@@ -229,6 +229,24 @@ class GigFlowAccessibilityService : AccessibilityService() {
         return null
     }
 
+    /**
+     * One line describing every window the service can see: its type and the
+     * package that owns its root. Diagnostics uses it to tell "the card lives
+     * in another window" from "the card is in this window but unreadable".
+     */
+    private fun windowInventory(): String = try {
+        val wins = windows
+        if (wins.isEmpty()) "windows=0"
+        else "windows=" + wins.joinToString(" ") { w ->
+            val r = w.root
+            val name = r?.packageName?.toString() ?: "-"
+            r?.recycle()
+            "${w.type}:$name"
+        }
+    } catch (_: Exception) {
+        "windows=?"
+    }
+
     /** Hide the overlay only after the offer's been missing for a bit —
      *  single-frame parse misses are normal (animations, partial draws)
      *  and shouldn't flicker the verdict off. */
@@ -393,7 +411,10 @@ class GigFlowAccessibilityService : AccessibilityService() {
             // Window exists but its content isn't retrievable (or the window
             // list hasn't caught up yet) — record it so Diagnostics shows
             // "we saw the app but couldn't read it" rather than nothing.
-            Diagnostics.record(this, pkg, "idle", listOf("(window not readable)"))
+            Diagnostics.record(
+                this, pkg, "idle",
+                listOf("(window not readable)", windowInventory()),
+            )
             maybeOfferGone(now)
             return
         }
@@ -401,6 +422,13 @@ class GigFlowAccessibilityService : AccessibilityService() {
         val nodes = OfferParser.flatten(root)
         val decision = ArrayList<String>(8)
         decision.add("attempt=$attempt nodes=${nodes.size}")
+        // Android 12+ lets an app mark views data-sensitive; a service that
+        // isn't an accessibility tool receives them with no text at all. This
+        // is the difference between "Uber renders a canvas" and "Uber redacts
+        // the card", so it belongs in the recorded tree.
+        val dataSensitive = nodes.count { it.dataSensitive }
+        decision.add("sensitive=$dataSensitive blank=${nodes.count { it.text.isEmpty() }}")
+        if (dataSensitive > 0 || nodes.isEmpty()) decision.add(windowInventory())
         // A taught mapping for this exact layout, if the user made one. It is
         // only consulted when the heuristics return nothing (see OfferParser).
         val hint = ParseHints.forScreen(this, pkg, nodes)

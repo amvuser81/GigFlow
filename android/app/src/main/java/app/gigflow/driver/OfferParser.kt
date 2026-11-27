@@ -190,6 +190,10 @@ object OfferParser {
         val viewId: String?,
         val bounds: Bounds,
         val clickable: Boolean,
+        /** Android 12+ redaction: the view declares its content sensitive, and
+         *  a service that isn't an accessibility tool receives it without any
+         *  text. See the service config's isAccessibilityTool. */
+        val dataSensitive: Boolean = false,
     )
 
     fun flatten(root: AccessibilityNodeInfo): List<FlatNode> {
@@ -206,6 +210,8 @@ object OfferParser {
             n.getBoundsInScreen(r)
             val viewId = n.viewIdResourceName
             val clickable = n.isClickable
+            val dataSensitive =
+                android.os.Build.VERSION.SDK_INT >= 31 && n.isAccessibilityDataSensitive
             for (i in 0 until n.childCount) {
                 n.getChild(i)?.let(stack::add)
             }
@@ -213,7 +219,11 @@ object OfferParser {
             // Unlabeled clickable nodes are kept: an offer's close "×" often has
             // no text, no id and no description, and teaching it needs it listed.
             if (label.isNotEmpty() || clickable) {
-                out.add(FlatNode(label, viewId, Bounds(r.left, r.top, r.right, r.bottom), clickable))
+                out.add(
+                    FlatNode(
+                        label, viewId, Bounds(r.left, r.top, r.right, r.bottom), clickable, dataSensitive,
+                    ),
+                )
             }
         }
         return out
