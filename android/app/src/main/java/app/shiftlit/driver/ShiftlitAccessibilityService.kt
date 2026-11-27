@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.speech.tts.TextToSpeech
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityWindowInfo
@@ -27,6 +28,7 @@ class ShiftlitAccessibilityService : AccessibilityService() {
     private var lastFingerprint = ""
     private var lastSeenAt = 0L
     private var lastScanAt = 0L
+    private var lastRadarTapAt = 0L
     private var scanToken = 0
     private var activeOffer: ScoredOffer? = null
 
@@ -34,17 +36,19 @@ class ShiftlitAccessibilityService : AccessibilityService() {
     private var teach: TeachOverlay? = null
     private var teachSession: TeachSession? = null
 
-    /** Last screen the teach bar was offered for, so it can't re-pop on the
-     *  same screen every few seconds while the driver stays on it. */
-    private var lastMissKey = ""
-    private var lastMissPkg = ""
-
     private val handler = Handler(Looper.getMainLooper())
     private var hideRunnable: Runnable? = null
     private var hideToken = ""
     private var tts: TextToSpeech? = null
     private var localDb: LocalDb? = null
     private var countdownTicker: Runnable? = null
+
+    /**
+     * Safety net for offer windows that draw without emitting an accessibility
+     * event. Samsung/Uber can add the Trip Radar card silently; waiting for a
+     * contentChanged event means the card is gone before the first read.
+     */
+    private var pollRunnable: Runnable? = null
 
     /** Driver apps Shiftlit reads — the rest of the event stream is only used to
      *  notice that the driver app left the screen. */
@@ -67,18 +71,16 @@ class ShiftlitAccessibilityService : AccessibilityService() {
          *  reappear before hiding the overlay. */
         private const val MISS_GRACE_MS = 2_000L
 
-        /** Re-read delays when a screen has money but didn't parse — offer
-         *  cards animate in, so the first read can precede the text. */
-        private val RETRY_DELAYS_MS = longArrayOf(250L, 700L)
+        /** Re-read delays for an offer-like frame that didn't parse yet —
+         *  cards and overlays animate in, so the first read can be just a
+         *  header before the payout and distance are laid out. */
+        private val RETRY_DELAYS_MS = longArrayOf(250L, 700L, 1_500L, 2_500L)
 
         /** A verdict never outlives this, even if the card behind it lingers. */
         private const val MAX_OVERLAY_MS = 30_000L
 
         /** Package name of the synthetic offer from the Assist screen. */
         private const val TEST_PKG = "app.shiftlit.test"
-
-        /** A miss bar gives up on its own, like a verdict. */
-        private const val MISS_BAR_MS = 20_000L
 
         /** Live instance while the service is enabled — null otherwise. */
         @Volatile var instance: ShiftlitAccessibilityService? = null
@@ -92,6 +94,47 @@ class ShiftlitAccessibilityService : AccessibilityService() {
         localDb = LocalDb(this)
         tts = TextToSpeech(this) { /* ready */ }
         instance = this
+        startWindowPoll()
+    }
+
+    /**
+     * Poll the interactive windows once a second while monitoring is on. The
+     * event-driven path still does the real work; this only catches overlays
+     * that never produce a usable event. It reads roots and scores them, so it
+     * stays idle when no watched app is visible.
+     */
+    private fun startWindowPoll() {
+        if (pollRunnable != null) return
+        val r = object : Runnable {
+            override fun run() {
+                if (!settings.enabled || teachSession != null) {
+                    handler.postDelayed(this, 1_000)
+                    return
+                }
+                val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                if (!pm.isInteractive) {
+                    handler.postDelayed(this, 1_500)
+                    return
+                }
+                val now = System.currentTimeMillis()
+                val pkg = visibleWatchedPackage()
+                if (pkg != null) {
+                    onDriverAppSeen(now)
+                    if (now - lastScanAt >= 700) {
+                        lastScanAt = now
+                        scan(pkg, now, attempt = 0, token = ++scanToken)
+                    }
+                }
+                handler.postDelayed(this, 1_000)
+            }
+        }
+        pollRunnable = r
+        handler.postDelayed(r, 1_000)
+    }
+
+    private fun stopWindowPoll() {
+        pollRunnable?.let { handler.removeCallbacks(it) }
+        pollRunnable = null
     }
 
     /**
@@ -223,13 +266,20 @@ class ShiftlitAccessibilityService : AccessibilityService() {
     )
 
     /**
-     * The window of [pkg] that actually holds the offer. Offer cards live in
-     * their own window, and topmost-first is wrong the moment a promo sheet or
-     * a dialog sits above the card — so every window the package owns is scored
-     * on money plus request wording, and the best one wins. A tie falls back to
-     * window order (topmost first), which is the card over the app's own screen.
+     * The window of [pkg] that holds the offer, used when teaching or testing a
+     * specific app. See [pickBestWindow] for the shared selection logic.
      */
-    private fun pickWindow(pkg: String): WindowPick? {
+    private fun pickWindow(pkg: String): WindowPick? =
+        pickBestWindow(onlyPkg = pkg)
+
+    /**
+     * The best visible offer window across every watched app. A driver app can
+     * draw its offer over another app (Uber does), so the window event often
+     * arrives with the package underneath, not the app that owns the card.
+     * Scoring every visible watched window and then taking the topmost winner
+     * keeps that card reachable without trusting event.packageName.
+     */
+    private fun pickBestWindow(onlyPkg: String? = null): WindowPick? {
         val wins = try {
             windows
         } catch (_: Exception) {
@@ -240,33 +290,45 @@ class ShiftlitAccessibilityService : AccessibilityService() {
         // money here, or the window holding the card would look empty.
         val extra = OfferParser.extraMoney(settings.currencyCode, settings.currencySymbol)
         var candidates = 0
-        var found = false
         var bestId = -1
         var bestType = -1
-        var bestScore = 0
+        var bestPkg: String? = null
+        var bestScore = -1
         var bestMoney = 0
         var bestCues = 0
+        var bestLayer = Int.MIN_VALUE
         for (w in wins) {
             val r = w.root ?: continue
-            if (r.packageName?.toString() != pkg) {
+            if (!r.isVisibleToUser && !w.isActive && !w.isFocused) {
+                r.recycle()
+                continue
+            }
+            val rpkg = r.packageName?.toString()
+            if (rpkg == null || rpkg !in watched || (onlyPkg != null && rpkg != onlyPkg)) {
                 r.recycle()
                 continue
             }
             candidates++
             // Labels only — no bounds, no ids, no FlatNodes. The winner is
             // flattened once below and that tree goes straight to the parser,
-            // so a scan walks the screen twice at most for the whole package.
+            // so a scan walks each window twice at most.
             val s = OfferParser.scoreTree(r, extra, settings.currencySymbol)
-            if (!found || s.score > bestScore) {
-                found = true
+            val layer = w.layer
+            // Topmost wins a tie; the window list is ordered top to bottom,
+            // and our loop keeps the first one when score and layer are equal.
+            val better = s.score > bestScore ||
+                (s.score == bestScore && layer > bestLayer)
+            if (better) {
                 bestId = w.id
                 bestType = w.type
+                bestPkg = rpkg
                 bestScore = s.score
                 bestMoney = s.money
                 bestCues = s.cues
+                bestLayer = layer
             }
         }
-        if (found) {
+        if (bestPkg != null) {
             val root = try {
                 wins.firstOrNull { it.id == bestId }?.root
             } catch (_: Exception) {
@@ -274,17 +336,18 @@ class ShiftlitAccessibilityService : AccessibilityService() {
             }
             if (root != null) {
                 return WindowPick(
-                    OfferParser.flatten(root), bestId, bestType, pkg, candidates, bestMoney, bestCues,
+                    OfferParser.flatten(root), bestId, bestType, bestPkg, candidates, bestMoney, bestCues,
                 )
             }
         }
         // The window list didn't give us one: fall back to the active root,
         // which is still worth reading even without a window id to report.
         rootInActiveWindow?.let {
-            if (it.packageName?.toString() == pkg) {
+            val rpkg = it.packageName?.toString()
+            if (rpkg != null && rpkg in watched && (onlyPkg == null || rpkg == onlyPkg)) {
                 val nodes = OfferParser.flatten(it)
                 val s = OfferParser.scoreScreen(nodes, extra, settings.currencySymbol)
-                return WindowPick(nodes, -1, -1, pkg, candidates, s.money, s.cues)
+                return WindowPick(nodes, -1, -1, rpkg, candidates, s.money, s.cues)
             }
             it.recycle() // non-matching roots are ours to free
         }
@@ -292,9 +355,59 @@ class ShiftlitAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * One line describing every window the service can see: its type and the
-     * package that owns its root. Diagnostics uses it to tell "the card lives
-     * in another window" from "the card is in this window but unreadable".
+     * Re-read the live windows immediately before opening a radar pill. The
+     * pill can vanish while a scan is in flight; only a fresh tree and fresh
+     * bounds may be tapped, never the snapshot that triggered this attempt.
+     */
+    private fun freshTripRadarTapTarget(pkg: String): Bounds? {
+        val wins = try {
+            windows
+        } catch (_: Exception) {
+            return null
+        }
+        for (w in wins) {
+            val root = w.root ?: continue
+            val name = root.packageName?.toString()
+            val visible = root.isVisibleToUser || w.isActive || w.isFocused
+            if (name != pkg || !visible) {
+                root.recycle()
+                continue
+            }
+            val target = OfferParser.tripRadarTapTarget(OfferParser.flatten(root))
+            root.recycle()
+            if (target != null) return target
+        }
+        return null
+    }
+
+    /**
+     * The first visible window owned by a watched app. This keeps the service
+     * alive while that app's offer is over another app, without requiring the
+     * event itself to carry the watched package.
+     */
+    private fun visibleWatchedPackage(): String? {
+        return try {
+            for (w in windows) {
+                val r = w.root ?: continue
+                if (!r.isVisibleToUser && !w.isActive && !w.isFocused) {
+                    r.recycle()
+                    continue
+                }
+                val name = r.packageName?.toString()
+                r.recycle()
+                if (name != null && name in watched) return name
+            }
+            null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * One line describing every window the service can see: its type, layer and
+     * the package that owns its root. Diagnostics uses it to tell "the card
+     * lives in another window" from "the card is in this window but
+     * unreadable".
      */
     private fun windowInventory(): String = try {
         val wins = windows
@@ -302,8 +415,14 @@ class ShiftlitAccessibilityService : AccessibilityService() {
         else "windows=" + wins.joinToString(" ") { w ->
             val r = w.root
             val name = r?.packageName?.toString() ?: "-"
+            val visible = r?.isVisibleToUser == true || w.isActive || w.isFocused
             r?.recycle()
-            "${w.type}:$name"
+            buildString {
+                append("#${w.id}:${w.type}:$name/l${w.layer}")
+                if (w.isActive) append("/active")
+                if (w.isFocused) append("/focused")
+                if (!visible) append("/hidden")
+            }
         }
     } catch (_: Exception) {
         "windows=?"
@@ -320,52 +439,6 @@ class ShiftlitAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Offer the teach bar on a screen that had money but didn't parse. A miss
-     * is where teaching matters most, and the card is only live right now —
-     * there is no other moment to point at it.
-     */
-    private fun maybeTeachBar(pkg: String, nodes: List<OfferParser.FlatNode>, taught: Boolean) {
-        if (teachSession != null) return
-        if (activeOffer != null) return // a verdict is already on screen
-        if (pkg != lastMissPkg) {
-            lastMissPkg = pkg
-            lastMissKey = ""
-        }
-        val key = ParseHints.screenKey(nodes)
-        if (key == lastMissKey) return // same screen — already offered once
-        // An earnings or wallet screen carries money but no request cues;
-        // teaching on it is noise. A layout the driver taught is the exception.
-        if (!taught && !OfferParser.looksLikeOfferForTeaching(
-                nodes,
-                OfferParser.extraMoney(settings.currencyCode, settings.currencySymbol),
-                settings.currencySymbol,
-            )
-        ) return
-        lastMissKey = key
-        overlay.showMiss(
-            onTeach = { startTeach(pkg) },
-            onDismiss = { overlay.hide() },
-        )
-        // Same lifetime rules as a verdict: gone when the app is, and never
-        // longer than the bar's own cap.
-        hideToken = "miss:$key"
-        hideRunnable?.let { handler.removeCallbacks(it) }
-        val token = hideToken
-        val r = Runnable { if (hideToken == token) overlay.hide() }
-        hideRunnable = r
-        handler.postDelayed(r, MISS_BAR_MS)
-    }
-
-    /** The money left the screen while the bar was up — a teach bar for a card
-     *  that is gone is just a floating label. */
-    private fun hideMissBar() {
-        if (!hideToken.startsWith("miss:")) return
-        hideRunnable?.let { handler.removeCallbacks(it) }
-        hideToken = ""
-        overlay.hide()
-    }
-
-    /**
      * True when one of our own *activity* windows is in front. Our accessibility
      * overlays report the same package name, so a plain package comparison
      * would make every overlay event look like "the user opened Shiftlit".
@@ -376,6 +449,10 @@ class ShiftlitAccessibilityService : AccessibilityService() {
         else wins.any { w ->
             if (w.type != AccessibilityWindowInfo.TYPE_APPLICATION) return@any false
             val root = w.root ?: return@any false
+            if (!root.isVisibleToUser && !w.isActive && !w.isFocused) {
+                root.recycle()
+                return@any false
+            }
             val ours = root.packageName?.toString() == packageName
             root.recycle()
             ours
@@ -396,7 +473,7 @@ class ShiftlitAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
-        val pkg = event.packageName?.toString() ?: return
+        val eventPkg = event.packageName?.toString()
         val now = System.currentTimeMillis()
 
         // The Monitoring switch is the master gate. Android keeps an enabled
@@ -413,31 +490,27 @@ class ShiftlitAccessibilityService : AccessibilityService() {
         // (or a different driver app) takes the screen.
         val teaching = teachSession
         if (teaching != null) {
-            if (pkg != packageName && (pkg !in watched || pkg != teaching.pkg)) endTeach()
+            if (eventPkg != null && eventPkg != packageName &&
+                (eventPkg !in watched || eventPkg != teaching.pkg)) endTeach()
             return
         }
 
-        // Not a driver app: the verdict belongs to a card that is no longer on
-        // screen, so drop it. This is what hides the overlay when the user
-        // leaves the app, opens the launcher, or switches to another app.
-        if (pkg !in watched) {
-            // Our own overlays carry this package as well. Only our *activity*
-            // being in front means the user opened Shiftlit; an overlay's own
-            // events must not dismiss the thing that is showing.
-            if (pkg == packageName) {
-                if (ourActivityInFront()) {
-                    endTeach()
-                    // The synthetic test offer is meant to be watched from
-                    // inside Shiftlit — its own activity must not wipe it.
-                    val synthetic = activeOffer?.offer?.appPackage == TEST_PKG
-                    if (!synthetic) offerGone()
-                }
-                return
-            }
-            // Left the driver app: a bar offered here shouldn't block the same
-            // screen being offered again when the driver comes back.
-            lastMissPkg = ""
-            lastMissKey = ""
+        // Our own overlays carry this package as well. Only our *activity*
+        // being in front means the user opened Shiftlit; an overlay's own
+        // events must not dismiss the thing that is showing.
+        if (eventPkg == packageName && ourActivityInFront()) {
+            endTeach()
+            // The synthetic test offer is meant to be watched from inside
+            // Shiftlit — its own activity must not wipe it.
+            val synthetic = activeOffer?.offer?.appPackage == TEST_PKG
+            if (!synthetic) offerGone()
+            return
+        }
+
+        // An Uber offer drawn over Maps can deliver its event with Maps as the
+        // package. Look for the watched window itself, not the event sender.
+        val visiblePkg = visibleWatchedPackage()
+        if (visiblePkg == null) {
             // A real verdict dies with its app. The synthetic test offer is the
             // exception — it is shown while this app is in front precisely so
             // the user can watch it run, so our own events must not wipe it.
@@ -446,12 +519,13 @@ class ShiftlitAccessibilityService : AccessibilityService() {
             return
         }
 
-        // A driver app is in front — feed the auto-shift tracker.
+        // A driver app is visible — feed the auto-shift tracker even when the
+        // event came from the app underneath its overlay.
         onDriverAppSeen(now)
 
         if (now - lastScanAt < 350) return // throttle contentChanged storms
         lastScanAt = now
-        scan(pkg, now, attempt = 0, token = ++scanToken)
+        scan(eventPkg ?: visiblePkg, now, attempt = 0, token = ++scanToken)
     }
 
     /**
@@ -459,28 +533,33 @@ class ShiftlitAccessibilityService : AccessibilityService() {
      * cards animate in over a few hundred ms, so parsing the first
      * contentChanged event can run before the payout text is laid out.
      */
-    private fun scan(pkg: String, now: Long, attempt: Int, token: Int) {
+    private fun scan(fallbackPkg: String?, now: Long, attempt: Int, token: Int) {
         if (token != scanToken) return // superseded by a newer scan
-        val prefs = settings.rulesFor(pkg) // per-app overrides over globals
-        // Monitoring switched off while an overlay was up — tear it down.
-        if (!prefs.enabled) { offerGone(); return }
 
         // Symbols beyond the built-in set (R$, ₩, KSh…) match through the
         // user's configured currency so any market parses.
         val curSymbol = settings.currencySymbol
         val extraRe = OfferParser.extraMoney(settings.currencyCode, curSymbol)
 
-        val pick = pickWindow(pkg) ?: run {
+        val pick = pickBestWindow() ?: run {
             // Window exists but its content isn't retrievable (or the window
             // list hasn't caught up yet) — record it so Diagnostics shows
             // "we saw the app but couldn't read it" rather than nothing.
-            Diagnostics.record(
-                this, pkg, "idle",
-                listOf("(window not readable)", windowInventory()),
-            )
+            val diagPkg = fallbackPkg?.takeIf { it in watched } ?: visibleWatchedPackage()
+            if (diagPkg != null) {
+                Diagnostics.record(
+                    this, diagPkg, "idle",
+                    listOf("(window not readable)", windowInventory()),
+                )
+            }
             maybeOfferGone(now)
             return
         }
+
+        val pkg = pick.pkg
+        val prefs = settings.rulesFor(pkg) // per-app overrides over globals
+        // Monitoring switched off while an overlay was up — tear it down.
+        if (!prefs.enabled) { offerGone(); return }
 
         val nodes = pick.nodes
         val decision = ArrayList<String>(8)
@@ -493,14 +572,17 @@ class ShiftlitAccessibilityService : AccessibilityService() {
                 "money=${pick.money} cues=${pick.cues}" +
                 if (pick.candidates > 1) " (best of ${pick.candidates})" else "",
         )
-        if (pick.candidates > 1) decision.add(windowInventory())
+        // Every read records the whole window stack. A Trip Radar card can be
+        // a separate window whose first frame is only a header, and this line
+        // is what tells us whether the details are in another window or were
+        // never exposed to accessibility at all.
+        decision.add(windowInventory())
         // Android 12+ lets an app mark views data-sensitive; a service that
         // isn't an accessibility tool receives them with no text at all. This
         // is the difference between "Uber renders a canvas" and "Uber redacts
         // the card", so it belongs in the recorded tree.
         val dataSensitive = nodes.count { it.dataSensitive }
         decision.add("sensitive=$dataSensitive blank=${nodes.count { it.text.isEmpty() }}")
-        if (dataSensitive > 0 || nodes.isEmpty()) decision.add(windowInventory())
         val hasMoney = nodes.any {
             OfferParser.moneyOf(it.text, extraRe, curSymbol) != null
         }
@@ -519,15 +601,44 @@ class ShiftlitAccessibilityService : AccessibilityService() {
             ParseHints.recordResult(this, pkg, hint.screen, offer != null)
         }
         if (offer == null) {
+            // Uber only draws a Trip Radar pill; the actual order is behind
+            // a tap. Open the pill so the next read can see and score it.
+            // This never accepts or declines, and is controlled by the
+            // "Open Trip Radar offers" switch.
+            if (settings.autoOpenTripRadar && activeOffer == null &&
+                pkg == "com.ubercab.driver"
+            ) {
+                if (OfferParser.tripRadarTapTarget(nodes) != null &&
+                    now - lastRadarTapAt > 5_000L
+                ) {
+                    val radarTap = freshTripRadarTapTarget(pkg)
+                    if (radarTap != null) {
+                        lastRadarTapAt = now
+                        Diagnostics.record(this, pkg, "idle", nodes, decision)
+                        Diagnostics.note(this, pkg, "trip radar pill → opening it (no accept)")
+                        GesturePerformer.tap(this, radarTap) { ok ->
+                            if (ok) {
+                                handler.postDelayed(
+                                    { scan(pkg, System.currentTimeMillis(), 0, ++scanToken) },
+                                    500,
+                                )
+                            }
+                        }
+                        return
+                    }
+                }
+            }
             // A screen with a money figure but no parse is a "miss" — the
             // card was probably there but the layout beat the heuristic.
             // Record it so Diagnostics can show what we saw.
             Diagnostics.record(this, pkg, if (hasMoney) "miss" else "idle",
                 nodes, decision)
             maybeLogCompletion(pkg, nodes, now, extraRe, curSymbol)
-            // Money on screen but nothing parsed: the card may still be
-            // animating in, so look again shortly before giving up.
-            if (hasMoney && attempt < RETRY_DELAYS_MS.size) {
+            // Money, request wording, or a tiny overlay frame means the card
+            // may still be animating in. Uber's Trip Radar first appears as a
+            // header with no payout, then fills in; re-read through that.
+            val retryable = hasMoney || nodes.isEmpty() || pick.cues > 0 || nodes.size <= 8
+            if (retryable && attempt < RETRY_DELAYS_MS.size) {
                 handler.postDelayed(
                     { scan(pkg, System.currentTimeMillis(), attempt + 1, token) },
                     RETRY_DELAYS_MS[attempt],
@@ -549,14 +660,10 @@ class ShiftlitAccessibilityService : AccessibilityService() {
                 }
             }
             maybeOfferGone(now)
-            if (hasMoney) maybeTeachBar(pkg, nodes, hint != null) else hideMissBar()
             return
         }
         Diagnostics.record(this, pkg, "offer", nodes, decision)
         lastAiMissKey = ""
-        // A card this screen could parse proves the bar's job here is done;
-        // if the same screen later misses, it should get to ask again.
-        lastMissKey = ""
 
         // Same card still on screen — don't rescore/re-overlay every frame.
         if (offer.fingerprint == lastFingerprint && now - lastSeenAt < 60_000) {
@@ -611,12 +718,13 @@ class ShiftlitAccessibilityService : AccessibilityService() {
         // automatic countdown and auto-decline are gated.
         val automationTrusted = ParseHints.automationAllowed(hint)
         val autoAcceptDelay =
-            if (prefs.autoAccept && scored.verdict == Verdict.GOOD && offer.acceptNode != null &&
+            if (prefs.autoAccept && scored.verdict == Verdict.GOOD &&
+                offer.acceptNode?.clickable == true &&
                 automationTrusted &&
                 (settings.autoAcceptReservations || !offer.isReservation))
                 settings.autoAcceptDelaySec else 0
 
-        overlay.show(scored, autoAcceptDelay, onTeach = { startTeach(offer.appPackage) }) { action ->
+        overlay.show(scored, autoAcceptDelay) { action ->
             cancelAutoAccept()
             when (action) {
                 OverlayController.Action.ACCEPT -> offer.acceptNode?.let {
@@ -828,12 +936,14 @@ class ShiftlitAccessibilityService : AccessibilityService() {
         // wait for onDestroy or a stale `instance` would still answer the UI.
         endTeach()
         offerGone()
+        stopWindowPoll()
         instance = null
         return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
         instance = null
+        stopWindowPoll()
         cancelAutoAccept()
         hideRunnable?.let { handler.removeCallbacks(it) }
         idleStopCheck?.let { handler.removeCallbacks(it) }

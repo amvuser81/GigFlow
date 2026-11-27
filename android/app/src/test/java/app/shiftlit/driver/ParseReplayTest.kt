@@ -451,6 +451,94 @@ class ParseReplayTest {
     }
 
     @Test
+    fun uberMatchButtonIsBoundOnALiveTripRadarCard() {
+        val offer = OfferParser.parse(
+            "com.ubercab.driver",
+            listOf(
+                OfferParser.FlatNode("$8.63", "app:id/payout", Bounds(0, 0, 400, 80), false),
+                OfferParser.FlatNode("10.0 mi", null, Bounds(0, 80, 400, 140), false),
+                OfferParser.FlatNode("28 min", null, Bounds(0, 140, 400, 200), false),
+                OfferParser.FlatNode("Match", "app:id/match", Bounds(0, 300, 400, 380), true),
+            ),
+        )
+        assertNotNull(offer)
+        assertEquals("Match", offer!!.acceptNode?.label)
+        assertTrue("Match is a real clickable control", offer.acceptNode?.clickable == true)
+    }
+
+    @Test
+    fun uberUnnamedTopRightCloseIsMappedAsDecline() {
+        // Bounds from the real Uber card: the close icon is a blank, id-less
+        // clickable square inside the card's top-right; the map markers are
+        // smaller unnamed clickables elsewhere on the screen.
+        val x = OfferParser.FlatNode("", null, Bounds(840, 1144, 984, 1288), true)
+        val offer = OfferParser.parse(
+            "com.ubercab.driver",
+            listOf(
+                OfferParser.FlatNode("", null, Bounds(0, 0, 1080, 2340), true),
+                OfferParser.FlatNode("", null, Bounds(48, 1096, 1032, 2148), true),
+                OfferParser.FlatNode("$8.63", null, Bounds(96, 1241, 426, 1409), false),
+                OfferParser.FlatNode("28 min (10.0 mi) total", null, Bounds(192, 1581, 726, 1665), false),
+                OfferParser.FlatNode("Match", null, Bounds(96, 1956, 984, 2100), true),
+                x,
+                OfferParser.FlatNode("", "com.ubercab.driver:id/map_marker", Bounds(883, 276, 991, 471), true),
+            ),
+        )
+        assertNotNull(offer)
+        assertEquals("Match", offer!!.acceptNode?.label)
+        assertEquals("the unnamed X must become the decline control", x.bounds, offer.declineNode?.bounds)
+        assertEquals("decline (unnamed)", offer.declineNode?.label)
+    }
+
+    @Test
+    fun matchedCardDoesNotExposeAnAcceptControl() {
+        val offer = OfferParser.parse(
+            "com.ubercab.driver",
+            listOf(
+                OfferParser.FlatNode("$8.63", "app:id/payout", Bounds(0, 0, 400, 80), false),
+                OfferParser.FlatNode("10.0 mi", null, Bounds(0, 80, 400, 140), false),
+                OfferParser.FlatNode("28 min", null, Bounds(0, 140, 400, 200), false),
+                OfferParser.FlatNode(
+                    "Another driver matched to this request",
+                    null,
+                    Bounds(0, 200, 500, 260),
+                    false,
+                ),
+                OfferParser.FlatNode("Match", "app:id/match", Bounds(0, 300, 400, 380), true),
+                OfferParser.FlatNode("", null, Bounds(840, 1144, 984, 1288), true),
+            ),
+        )
+        assertNotNull(offer)
+        assertNull("a matched card has nothing live to accept", offer!!.acceptNode)
+        assertNull("and nothing live to decline", offer.declineNode)
+    }
+
+    @Test
+    fun tripRadarPillTapsItsClickableParentNotTheBadge() {
+        val nodes = listOf(
+            OfferParser.FlatNode("", null, Bounds(0, 0, 1080, 2340), true),
+            OfferParser.FlatNode("", null, Bounds(332, 1568, 747, 1712), true),
+            OfferParser.FlatNode(
+                "Trip Radar",
+                "com.ubercab.driver:id/ub__driver_job_offers_pill_title",
+                Bounds(380, 1604, 615, 1676),
+                false,
+            ),
+            OfferParser.FlatNode("1", null, Bounds(645, 1616, 693, 1664), false),
+        )
+        assertEquals(Bounds(332, 1568, 747, 1712), OfferParser.tripRadarTapTarget(nodes))
+    }
+
+    @Test
+    fun aScreenWithoutARadarPillHasNoTapTarget() {
+        assertNull(
+            OfferParser.tripRadarTapTarget(
+                listOf(OfferParser.FlatNode("$20.09", null, Bounds(0, 0, 300, 80), false)),
+            ),
+        )
+    }
+
+    @Test
     fun windowScoringUsesTheConfiguredCurrency() {
         val nodes = listOf(
             OfferParser.FlatNode("KSh 1 200", null, Bounds(0, 0, 300, 40), false),

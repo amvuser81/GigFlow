@@ -17,6 +17,9 @@ data class Bounds(val left: Int, val top: Int, val right: Int, val bottom: Int) 
 data class NodeRef(
     val bounds: Bounds,
     val label: String,
+    /** False when the parser only found wording on a non-clickable label;
+     *  that is not a control the overlay or automation can tap. */
+    val clickable: Boolean = true,
 )
 
 /** An offer extracted from a driver app's screen. */

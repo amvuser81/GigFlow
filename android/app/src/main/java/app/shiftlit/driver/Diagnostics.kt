@@ -34,11 +34,11 @@ object Diagnostics {
     // snapshots get persisted, not every accessibility event.
     private const val IDLE_WRITE_MS = 30_000L
 
-    /** Reads kept per app, newest first — enough to see a card come and go. */
-    private const val MAX_HISTORY = 20
+    /** Reads kept per app, newest first. Each one now carries its full
+     *  capture, so ten is the storage budget instead of twenty stubs. */
+    private const val MAX_HISTORY = 10
     private const val HIST_PREFIX = "hist:"
-    private const val HIST_TEXTS = 12
-    private const val HIST_DECISION = 10
+    private const val HIST_TEXTS = MAX_TEXTS
 
     /** One captured view node — enough to replay the parse later. */
     data class Node(
@@ -63,8 +63,8 @@ object Diagnostics {
         val decision: List<String> = emptyList(),
     )
 
-    /** One read in the per-app history. Compact on purpose: no node tree, so
-     *  twenty of them cost a few kilobytes and can be written every scan. */
+    /** One read in the per-app history. It keeps the same tree and parser
+     *  trail as the current snapshot, so an old offer can still be mapped. */
     data class Entry(
         val at: Long,
         val outcome: String,
@@ -72,9 +72,39 @@ object Diagnostics {
         val nodeCount: Int,
         val texts: List<String>,
         val decision: List<String>,
+        val nodes: List<Node> = emptyList(),
     )
 
     private fun key(pkg: String) = KEY_PREFIX + pkg
+
+    private fun nodesJson(nodes: List<Node>): JSONArray {
+        val arr = JSONArray()
+        nodes.forEach { n ->
+            arr.put(
+                JSONObject()
+                    .put("text", n.text)
+                    .put("viewId", n.viewId ?: "")
+                    .put("bounds", JSONArray(n.bounds))
+                    .put("clickable", n.clickable),
+            )
+        }
+        return arr
+    }
+
+    private fun nodesFrom(arr: JSONArray?): List<Node> = arr?.let { a ->
+        (0 until a.length()).mapNotNull { i ->
+            a.optJSONObject(i)?.let { n ->
+                val b = n.optJSONArray("bounds")
+                Node(
+                    text = n.optString("text"),
+                    viewId = n.optString("viewId").ifBlank { null },
+                    bounds = if (b == null) emptyList()
+                    else (0 until b.length()).map { b.optInt(it) },
+                    clickable = n.optBoolean("clickable"),
+                )
+            }
+        }
+    } ?: emptyList()
 
     /**
      * One key per package, not one JSON blob for every app: a miss keeps up to
@@ -160,16 +190,7 @@ object Diagnostics {
                 (prev.optString("outcome") == outcome && prev.optString("texts") == joined))
         ) return
 
-        val nodeArr = JSONArray()
-        nodes.forEach { n ->
-            nodeArr.put(
-                JSONObject()
-                    .put("text", n.text)
-                    .put("viewId", n.viewId ?: "")
-                    .put("bounds", JSONArray(n.bounds))
-                    .put("clickable", n.clickable),
-            )
-        }
+        val nodeArr = nodesJson(nodes)
         val decisionArr = JSONArray()
         decision.forEach { decisionArr.put(it) }
 
@@ -182,7 +203,7 @@ object Diagnostics {
             .put("nodes", nodeArr)
             .put("decision", decisionArr)
         prefs.edit().putString(key(pkg), o.toString()).apply()
-        pushHistory(ctx, pkg, outcome, screen, texts, decision, nodeCount)
+        pushHistory(ctx, pkg, outcome, screen, texts, decision, nodeCount, nodes)
     }
 
     fun get(ctx: Context, pkg: String): Snap? {
@@ -191,20 +212,7 @@ object Diagnostics {
             at = o.optLong("at"),
             outcome = o.optString("outcome", "idle"),
             texts = o.optString("texts").split("\n").filter { it.isNotBlank() },
-            nodes = o.optJSONArray("nodes")?.let { arr ->
-                (0 until arr.length()).mapNotNull { i ->
-                    arr.optJSONObject(i)?.let { n ->
-                        val b = n.optJSONArray("bounds")
-                        Node(
-                            text = n.optString("text"),
-                            viewId = n.optString("viewId").ifBlank { null },
-                            bounds = if (b == null) emptyList()
-                            else (0 until b.length()).map { b.optInt(it) },
-                            clickable = n.optBoolean("clickable"),
-                        )
-                    }
-                }
-            } ?: emptyList(),
+            nodes = nodesFrom(o.optJSONArray("nodes")),
             nodeCount = o.optInt("nodeCount"),
             screen = o.optString("screen"),
             decision = o.optJSONArray("decision")?.let { arr ->
@@ -257,7 +265,7 @@ object Diagnostics {
         } catch (_: Exception) {
             return emptyList()
         }
-        return (0 until arr.length()).mapNotNull { i ->
+        return (0 until minOf(arr.length(), MAX_HISTORY)).mapNotNull { i ->
             val o = arr.optJSONObject(i) ?: return@mapNotNull null
             Entry(
                 at = o.optLong("at"),
@@ -270,14 +278,14 @@ object Diagnostics {
                 decision = o.optJSONArray("decision")?.let { a ->
                     (0 until a.length()).map { a.optString(it) }
                 } ?: emptyList(),
+                nodes = nodesFrom(o.optJSONArray("nodes")),
             )
         }
     }
 
     /**
-     * Remember one read. The latest snapshot already keeps the full tree; this
-     * keeps what changes fastest — outcome, why, and the first few texts — so
-     * "it said new offer for a second" can be looked at after the fact.
+     * Remember one read with its full tree, texts and parser trail. Ten full
+     * captures fit comfortably and let an offer be inspected after it is gone.
      */
     private fun pushHistory(
         ctx: Context,
@@ -287,6 +295,7 @@ object Diagnostics {
         texts: List<String>,
         decision: List<String>,
         nodeCount: Int,
+        nodes: List<Node>,
     ) {
         val prefs = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         val k = HIST_PREFIX + pkg
@@ -295,11 +304,10 @@ object Diagnostics {
         } catch (_: Exception) {
             JSONArray()
         }
-        val trimmedDecision = decision.take(HIST_DECISION)
         fun sameDecision(o: JSONObject): Boolean {
-            val a = o.optJSONArray("decision") ?: return trimmedDecision.isEmpty()
-            if (a.length() != trimmedDecision.size) return false
-            for (i in 0 until a.length()) if (a.optString(i) != trimmedDecision[i]) return false
+            val a = o.optJSONArray("decision") ?: return decision.isEmpty()
+            if (a.length() != decision.size) return false
+            for (i in 0 until a.length()) if (a.optString(i) != decision[i]) return false
             return true
         }
         fun sameTexts(o: JSONObject): Boolean {
@@ -323,7 +331,8 @@ object Diagnostics {
             .put("screen", screen)
             .put("nodeCount", nodeCount)
             .put("texts", JSONArray(texts.take(HIST_TEXTS)))
-            .put("decision", JSONArray(trimmedDecision))
+            .put("decision", JSONArray(decision))
+            .put("nodes", nodesJson(nodes))
         val out = JSONArray()
         out.put(entry)
         var kept = 0
@@ -332,7 +341,9 @@ object Diagnostics {
             val o = prev.optJSONObject(i) ?: continue
             // The same read repeated is noise, not history.
             if (o.optString("outcome") == outcome &&
-                o.optString("screen") == screen && sameDecision(o)
+                o.optString("screen") == screen &&
+                o.optInt("nodeCount") == nodeCount &&
+                sameTexts(o) && sameDecision(o)
             ) continue
             out.put(o)
             kept++

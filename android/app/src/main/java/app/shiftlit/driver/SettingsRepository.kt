@@ -21,6 +21,12 @@ class SettingsRepository(context: Context) {
         get() = prefs.getBoolean("auto_decline", false)
         set(v) = prefs.edit().putBoolean("auto_decline", v).apply()
 
+    /** Open Uber's Trip Radar pill so its hidden offer card can be read.
+     *  This only opens the list; accept/decline stay under their own flags. */
+    var autoOpenTripRadar: Boolean
+        get() = prefs.getBoolean("auto_open_trip_radar", false)
+        set(v) = prefs.edit().putBoolean("auto_open_trip_radar", v).apply()
+
     var minPerMileCents: Int
         get() = prefs.getInt("min_per_mile", 150)
         set(v) = prefs.edit().putInt("min_per_mile", v).apply()

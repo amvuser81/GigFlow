@@ -137,7 +137,7 @@ object OfferParser {
     // Word stems keep the table compact (Hungarian "Elfogadás/Elfogadom",
     // Polish "Akceptuj/Przyjmij"…). "swipe" catches Flex's slider label.
     private val ACCEPT_WORDS = Regex(
-        """accept|confirm|match me|claim|grab it|start delivery|swipe|""" +
+        """\bmatch\b|accept|confirm|match me|claim|grab it|start delivery|swipe|""" +
             """accepter|aceptar|aceitar|acceptă|akzept|aksep|annehm|akcept|przyjm|přijm|prija|""" +
             """elfogad|átvett|átvesz|hyväks|godkänn|godkjenn|godta|kabul|zaprim|prejmi|""" +
             """прийма|прийнят|приеми|acceptez|pastāst|patvirt""",
@@ -163,6 +163,13 @@ object OfferParser {
         """reserv|scheduled|foglal|ütemez|rezerv|planowan|zaplanowan|bokad|planlagt|varattu|забронь|зарезерв""",
         RegexOption.IGNORE_CASE,
     )
+    /** A card that is already gone: its Match/Accept-looking label is not a
+     *  live control, so the overlay must not offer it as one. */
+    private val UNAVAILABLE = Regex(
+        """another driver matched|no longer available|already matched|already taken|""" +
+            """request (?:is )?(?:unavailable|expired)|offer (?:is )?(?:expired|no longer available)""",
+        RegexOption.IGNORE_CASE,
+    )
 
     // A day's-work summary — earnings, wallet, balance — carries money and a
     // length of time, and used to score as an offer: "new offer $94" for the
@@ -177,7 +184,7 @@ object OfferParser {
     /** Wording that makes a screen a request rather than a money summary. */
     private val OFFER_WORDS = Regex(
         """new (offer|order|ride|request|job|delivery|trip)|incoming (offer|order|ride|request)|""" +
-            """ride request|order request|delivery request|fuvar|rendelés|auftrag|solicitud|заказ""",
+            """ride request|order request|delivery request|trip radar|fuvar|rendelés|auftrag|solicitud|заказ""",
         RegexOption.IGNORE_CASE,
     )
 
@@ -229,6 +236,27 @@ object OfferParser {
             }
         }
         return out
+    }
+
+    /**
+     * Uber's Trip Radar pill is the only part of a radar offer on screen
+     * until it is opened. The title itself is not clickable; return the
+     * smallest clickable ancestor around it so a tap opens the list. Null
+     * means this screen has no radar pill.
+     */
+    fun tripRadarTapTarget(nodes: List<FlatNode>): Bounds? {
+        val title = nodes.firstOrNull {
+            it.viewId?.endsWith("ub__driver_job_offers_pill_title") == true ||
+                it.text.equals("Trip Radar", ignoreCase = true)
+        } ?: return null
+        val cx = title.bounds.centerX()
+        val cy = title.bounds.centerY()
+        val parent = nodes.asSequence()
+            .filter { it.clickable && it.bounds.contains(cx, cy) }
+            .minByOrNull { it.bounds.width().toLong() * it.bounds.height().toLong() }
+        // A full-screen clickable root is not the pill; tapping the title's
+        // center still lands inside the real pill in that case.
+        return if (parent != null && parent.bounds.width() < 900) parent.bounds else title.bounds
     }
 
     /**
@@ -424,6 +452,7 @@ object OfferParser {
         unit: String,
     ): DetectedOffer? {
         val texts = nodes.map { it.text }
+        val unavailable = texts.any { UNAVAILABLE.containsMatchIn(it) }
 
         // Collect money figures with their context. The card total is usually
         // the largest standalone amount; "incl. tip" lines become tips.
@@ -559,17 +588,44 @@ object OfferParser {
         val taughtAccept = hint?.accept?.let { a -> ParseHints.resolve(nodes, a) }
         val taughtDecline = hint?.decline?.let { a -> ParseHints.resolve(nodes, a) }
 
-        val accept = taughtAccept?.let { it.ref() }
-            ?: nodeMatching(ACCEPT_WORDS, clickableOnly = true)
-            ?: nodeMatching(ACCEPT_WORDS, clickableOnly = false)
-            ?: if (isReservation && pkg == "com.amazon.rabbit") {
-                nodeMatching(RESERVE_ACCEPT, clickableOnly = true)
-                    ?: nodeMatching(RESERVE_ACCEPT, clickableOnly = false)
-            } else null
-            ?: tapAnywhereAccept(payoutMoney?.node)
+        val accept = if (unavailable) {
+            trace?.add("card no longer available → no accept")
+            null
+        } else {
+            taughtAccept?.let { it.ref() }
+                ?: nodeMatching(ACCEPT_WORDS, clickableOnly = true)
+                ?: nodeMatching(ACCEPT_WORDS, clickableOnly = false)
+                ?: if (isReservation && pkg == "com.amazon.rabbit") {
+                    nodeMatching(RESERVE_ACCEPT, clickableOnly = true)
+                        ?: nodeMatching(RESERVE_ACCEPT, clickableOnly = false)
+                } else null
+                ?: tapAnywhereAccept(payoutMoney?.node)
+        }
+        // Uber's decline control is an unlabeled close icon in the card's
+        // top-right. It has no text or view id to match, so find it by shape
+        // and position relative to the payout. Big clickable nodes (the card,
+        // the root) and map markers elsewhere on screen are excluded.
+        fun unnamedUberDecline(payoutNode: FlatNode?): NodeRef? {
+            if (pkg != "com.ubercab.driver" || unavailable) return null
+            val m = payoutNode ?: return null
+            return nodes
+                .filter { n ->
+                    n.clickable &&
+                        n.text.isBlank() &&
+                        n.viewId.isNullOrBlank() &&
+                        n.bounds.width() in 48..260 &&
+                        n.bounds.height() in 48..260 &&
+                        n.bounds.centerX() > m.bounds.right &&
+                        n.bounds.centerY() in (m.bounds.top - 360)..(m.bounds.bottom + 240)
+                }
+                .minByOrNull { Math.abs(it.bounds.centerY() - m.bounds.centerY()) }
+                ?.let { it.ref().copy(label = "decline (unnamed)") }
+        }
+
         val decline = taughtDecline?.let { it.ref() }
             ?: nodeMatching(DECLINE_WORDS, clickableOnly = true)
             ?: nodeMatching(DECLINE_WORDS, clickableOnly = false)
+            ?: unnamedUberDecline(payoutMoney?.node)
 
         trace?.add("accept=${accept?.label ?: "none"} decline=${decline?.label ?: "none"}")
 
@@ -594,7 +650,7 @@ object OfferParser {
 
     private fun num(s: String): Double? = s.replace(',', '.').toDoubleOrNull()
 
-    private fun FlatNode.ref() = NodeRef(bounds, text)
+    private fun FlatNode.ref() = NodeRef(bounds, text, clickable)
 
     private fun distanceOf(text: String): Double? =
         MILES.find(text)?.groupValues?.get(1)?.let(::num)?.times(1.609344)

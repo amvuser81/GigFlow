@@ -57,7 +57,6 @@ class OverlayController(private val service: AccessibilityService) {
     fun show(
         scored: ScoredOffer,
         autoAcceptSec: Int = 0,
-        onTeach: (() -> Unit)? = null,
         onAction: (Action) -> Unit,
     ) {
         hide()
@@ -112,7 +111,7 @@ class OverlayController(private val service: AccessibilityService) {
         container.addView(title)
         container.addView(stats)
 
-        if (o.acceptNode != null || o.declineNode != null) {
+        if (o.acceptNode?.clickable == true || o.declineNode != null) {
             val row = LinearLayout(service).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setPadding(0, 10.dp(), 0, 0)
@@ -131,7 +130,7 @@ class OverlayController(private val service: AccessibilityService) {
             o.declineNode?.let {
                 row.addView(pill("Decline", Color.parseColor("#2A2A2F"), Action.DECLINE))
             }
-            o.acceptNode?.let {
+            o.acceptNode?.takeIf { it.clickable }?.let {
                 row.addView(
                     pill("Accept", Color.parseColor("#0B8A80"), Action.ACCEPT),
                     LinearLayout.LayoutParams(
@@ -141,18 +140,6 @@ class OverlayController(private val service: AccessibilityService) {
                 )
             }
             container.addView(row)
-        }
-
-        // Entry to point-at-the-card teaching: the card is live right now, so
-        // this is the only moment the control the driver means can be tapped.
-        onTeach?.let { teach ->
-            container.addView(TextView(service).apply {
-                text = "Teach this card"
-                setTextColor(Color.parseColor("#9AA3B2"))
-                textSize = 11.5f
-                setPadding(0, 8.dp(), 0, 0)
-                setOnClickListener { teach() }
-            })
         }
 
         // Offer's own expiry timer, if the card showed one ("0:15", "12s").
@@ -201,83 +188,6 @@ class OverlayController(private val service: AccessibilityService) {
         try {
             wm.addView(container, params)
             view = container
-        } catch (_: Exception) {
-            // Overlay can fail if the service isn't fully attached yet.
-        }
-    }
-
-    /**
-     * Compact bar for a screen Shiftlit couldn't read. A miss is exactly where
-     * teaching matters most, and it is also the moment the card is still live,
-     * so this is the only reliable entry to point-at-the-card teaching for a
-     * screen the heuristics don't understand.
-     */
-    fun showMiss(onTeach: () -> Unit, onDismiss: () -> Unit) {
-        hide()
-        val density = service.resources.displayMetrics.density
-        fun Int.dp() = (this * density).toInt()
-
-        val card = LinearLayout(service).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(16.dp(), 10.dp(), 16.dp(), 12.dp())
-            background = GradientDrawable().apply {
-                cornerRadius = 14.dp().toFloat()
-                setColor(Color.parseColor("#F214191F"))
-            }
-            elevation = 8.dp().toFloat()
-        }
-        card.addView(TextView(service).apply {
-            text = "Shiftlit couldn't read this card"
-            setTextColor(Color.parseColor("#F0B429"))
-            textSize = 13.5f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-        })
-        card.addView(TextView(service).apply {
-            text = "Teach it what to tap — point at the payout or the button."
-            setTextColor(Color.parseColor("#D7DBE4"))
-            textSize = 12f
-            setPadding(0, 4.dp(), 0, 8.dp())
-        })
-
-        fun pill(text: String, color: Int, act: () -> Unit) = TextView(service).apply {
-            this.text = text
-            textSize = 12.5f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(Color.WHITE)
-            setPadding(14.dp(), 7.dp(), 14.dp(), 7.dp())
-            background = GradientDrawable().apply {
-                cornerRadius = 16.dp().toFloat()
-                setColor(color)
-            }
-            setOnClickListener { act() }
-        }
-        val row = LinearLayout(service).apply { orientation = LinearLayout.HORIZONTAL }
-        row.addView(pill("Teach this card", Color.parseColor("#0B8A80"), onTeach))
-        row.addView(
-            pill("Not now", Color.parseColor("#3A4150"), onDismiss),
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { marginStart = 8.dp() },
-        )
-        card.addView(row)
-
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-            PixelFormat.TRANSLUCENT,
-        ).apply {
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            y = 24.dp()
-        }
-
-        try {
-            wm.addView(card, params)
-            view = card
         } catch (_: Exception) {
             // Overlay can fail if the service isn't fully attached yet.
         }

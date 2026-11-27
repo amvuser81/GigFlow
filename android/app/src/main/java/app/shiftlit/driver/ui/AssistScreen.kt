@@ -239,14 +239,13 @@ class AssistScreen(
         })
         col.addView(TextView(ctx).apply {
             text = if (snap.outcome == "miss")
-                "Shiftlit did not parse an offer. If this is a mistake, " +
-                    "\"Teach this screen\" below."
+                "Shiftlit did not parse an offer. The full capture and parser trail are below."
             else "Everything the assistant read on the last screen."
             textSize = Ios.T_FOOTNOTE; setTextColor(p.label2)
             setPadding(0, 0, 0, dp(ctx, 10f))
         })
         // The history lives on its own sheet: the per-app row is already the
-        // busiest thing here, and 20 reads inline would bury the current one.
+        // busiest thing here, and ten full captures inline would bury the current one.
         val histPkg = watchedApps.firstOrNull { it.first == name }?.second
         val history = histPkg?.let { Diagnostics.history(ctx, it) }.orEmpty()
         if (history.isNotEmpty()) {
@@ -259,6 +258,17 @@ class AssistScreen(
                     sheet.dismiss()
                     historySheet(name, history)
                 }
+            })
+        }
+        col.addView(TextView(ctx).apply {
+            text = "${snap.outcome} · ${ago(snap.at)} · ${snap.nodeCount} nodes"
+            textSize = Ios.T_FOOTNOTE; setTextColor(p.label2)
+            setPadding(0, 0, 0, dp(ctx, 4f))
+        })
+        snap.decision.forEach { d ->
+            col.addView(TextView(ctx).apply {
+                text = d
+                textSize = Ios.T_CAPTION; setTextColor(p.label2)
             })
         }
         snap.texts.forEach { t ->
@@ -369,25 +379,23 @@ class AssistScreen(
                 })
             }
         }
-        // Only meaningful on a miss: the parser never consults a hint when its
-        // own heuristics produce an offer, so teaching a working screen would
-        // be a no-op the user can't see the result of.
-        if (snap.nodes.isNotEmpty()) {
+        // Decline mapping is deliberately separate from the old generic card
+        // teaching: the amounts parse reliably now, and this is the one live
+        // control that can still be ambiguous on a new layout.
+        if (snap.outcome == "offer" && snap.nodes.isNotEmpty()) {
             col.addView(TextView(ctx).apply {
-                text = if (stale != null) "Re-teach this screen" else "Teach this screen"
+                text = if (stale != null) "Re-map decline" else "Map decline"
                 textSize = Ios.T_BODY; setTypeface(typeface, Typeface.BOLD)
                 setTextColor(p.tint); gravity = android.view.Gravity.CENTER
                 setPadding(0, dp(ctx, 12f), 0, dp(ctx, 6f))
                 setOnClickListener {
                     sheet.dismiss()
-                    teachSheet(name, snap)
+                    teachSheet(name, snap, onlyRole = "Decline")
                 }
             })
             col.addView(TextView(ctx).apply {
-                text = if (snap.outcome == "offer")
-                    "These amounts are already read. Teaching is for the accept/decline buttons."
-                else
-                    "Amounts apply only where the parser can't read a screen; buttons apply always."
+                text = "Tap the decline control on this captured offer. Amounts are already " +
+                    "read; only the button is saved."
                 textSize = Ios.T_CAPTION; setTextColor(p.label3)
                 gravity = android.view.Gravity.CENTER
                 setPadding(0, 0, 0, dp(ctx, 6f))
@@ -442,9 +450,9 @@ class AssistScreen(
     }
 
     /**
-     * The last 20 reads of one app, newest first. The snapshot shows the tree;
-     * this shows the sequence, which is what a card that appears for a moment
-     * and gets scored wrongly looks like after the fact.
+     * The last ten reads of one app, newest first. Each entry keeps the full
+     * tree and parser trail, so a card that has already gone can still be
+     * inspected and its decline control mapped.
      */
     private fun historySheet(name: String, entries: List<Diagnostics.Entry>) {
         val sheet = IosSheet(ctx, p)
@@ -458,8 +466,8 @@ class AssistScreen(
             setTextColor(p.label); setPadding(0, 0, 0, dp(ctx, 4f))
         })
         col.addView(TextView(ctx).apply {
-            text = "Newest first. One line per read; the full node tree is kept only " +
-                "for the latest read."
+            text = "Newest first. Every read keeps its full tree and parser trail; " +
+                "map decline from any offer below."
             textSize = Ios.T_FOOTNOTE; setTextColor(p.label2)
             setPadding(0, 0, 0, dp(ctx, 6f))
         })
@@ -476,17 +484,40 @@ class AssistScreen(
                 )
                 setPadding(0, dp(ctx, 10f), 0, dp(ctx, 2f))
             })
-            e.decision.take(6).forEach { d ->
+            e.decision.forEach { d ->
                 col.addView(TextView(ctx).apply {
                     text = d
                     textSize = Ios.T_CAPTION; setTextColor(p.label2)
                 })
             }
-            val head = e.texts.take(4)
-            if (head.isNotEmpty()) {
+            if (e.texts.isNotEmpty()) {
                 col.addView(TextView(ctx).apply {
-                    text = head.joinToString(" · ")
+                    text = e.texts.joinToString(" · ")
                     textSize = Ios.T_CAPTION; setTextColor(p.label3)
+                })
+            }
+            if (e.outcome == "offer" && e.nodes.isNotEmpty()) {
+                col.addView(TextView(ctx).apply {
+                    text = "Map decline · this offer"
+                    textSize = Ios.T_FOOTNOTE; setTypeface(typeface, Typeface.BOLD)
+                    setTextColor(p.tint)
+                    setPadding(0, dp(ctx, 4f), 0, 0)
+                    setOnClickListener {
+                        sheet.dismiss()
+                        teachSheet(
+                            name,
+                            Diagnostics.Snap(
+                                at = e.at,
+                                outcome = e.outcome,
+                                texts = e.texts,
+                                nodes = e.nodes,
+                                nodeCount = e.nodeCount,
+                                screen = e.screen,
+                                decision = e.decision,
+                            ),
+                            onlyRole = "Decline",
+                        )
+                    }
                 })
             }
         }
@@ -533,7 +564,7 @@ class AssistScreen(
         return saved?.let { ParseHints.staleReason(it, flat) }
     }
 
-    private fun teachSheet(name: String, snap: Diagnostics.Snap) {
+    private fun teachSheet(name: String, snap: Diagnostics.Snap, onlyRole: String? = null) {
         val pkg = watchedApps.firstOrNull { it.first == name }?.second ?: return
         val flat = flatOf(snap)
         if (flat.isEmpty()) return
@@ -543,7 +574,8 @@ class AssistScreen(
         val curSymbol = settings.currencySymbol
         val extraRe = OfferParser.extraMoney(settings.currencyCode, curSymbol)
 
-        val roles = listOf("Payout", "Distance", "Duration", "Accept", "Decline")
+        val roles = if (onlyRole != null) listOf(onlyRole)
+        else listOf("Payout", "Distance", "Duration", "Accept", "Decline")
         val picks = roles.associateWith<String, String?> { null }.toMutableMap()
         var active = 0
         var result: String? = null
@@ -558,6 +590,22 @@ class AssistScreen(
         sheet.add(col)
 
         fun hintFor(): ParseHints.Hint? {
+            if (onlyRole == "Decline") {
+                val decline = picks["Decline"] ?: return null
+                // Mapping one button must not erase a mapping that already
+                // carries the other controls for this layout.
+                val existing = ParseHints.forKey(ctx, pkg, screen)
+                    ?: ParseHints.forScreen(ctx, pkg, flat)
+                return existing?.copy(
+                    screen = screen,
+                    decline = decline,
+                    taughtAt = System.currentTimeMillis(),
+                ) ?: ParseHints.Hint(
+                    pkg = pkg,
+                    screen = screen,
+                    decline = decline,
+                )
+            }
             val payout = picks["Payout"]
             val accept = picks["Accept"]
             val decline = picks["Decline"]
@@ -610,14 +658,19 @@ class AssistScreen(
 
         fun render() {
             col.removeAllViews()
-            col.addView(line("Teach this screen", Ios.T_HEADLINE, p.label, 0f, bold = true))
             col.addView(line(
-                "Tap the payout, distance and duration when the normal parser misses them — " +
-                    "taught amounts are only used where the heuristics find nothing. Accept " +
-                    "and Decline apply even on a screen that already reads fine, which is how " +
-                    "an unlabeled \"×\" button gets taught.\n\nThis list is for a card that " +
-                    "has gone from the screen. On a live card, tap \"Teach this card\" on the " +
-                    "verdict and point at the control instead.",
+                if (onlyRole == "Decline") "Map decline" else "Teach this screen",
+                Ios.T_HEADLINE, p.label, 0f, bold = true,
+            ))
+            col.addView(line(
+                if (onlyRole == "Decline")
+                    "Tap the decline control on this captured offer. Only that button is " +
+                        "saved; the payout, distance and duration are already read."
+                else
+                    "Tap the payout, distance and duration when the normal parser misses them — " +
+                        "taught amounts are only used where the heuristics find nothing. Accept " +
+                        "and Decline apply even on a screen that already reads fine, which is how " +
+                        "an unlabeled \"×\" button gets taught.",
                 Ios.T_FOOTNOTE, p.label2, 6f,
             ))
             val savedHere = ParseHints.forKey(ctx, pkg, screen)
@@ -779,6 +832,10 @@ class AssistScreen(
             "Only when every rule passes", settings.autoAccept) { settings.autoAccept = it }
         val (r3, _) = Sections.switchRow(ctx, p, "Auto-decline bad offers",
             "As soon as any rule fails", settings.autoDecline) { settings.autoDecline = it }
+        val (rRadar, _) = Sections.switchRow(ctx, p, "Open Trip Radar offers",
+            "Opens the offer list; never accepts or declines", settings.autoOpenTripRadar) {
+            settings.autoOpenTripRadar = it
+        }
         val (r4, _) = Sections.switchRow(ctx, p, "Voice alerts",
             "Speak verdicts aloud as offers appear", settings.voiceAlerts) { settings.voiceAlerts = it }
         val (r5, _) = Sections.switchRow(ctx, p, "Auto-track mileage",
@@ -792,6 +849,7 @@ class AssistScreen(
         card.addView(r1); card.addView(Sections.separator(ctx, p))
         card.addView(r2); card.addView(Sections.separator(ctx, p))
         card.addView(r3); card.addView(Sections.separator(ctx, p))
+        card.addView(rRadar); card.addView(Sections.separator(ctx, p))
         card.addView(r4); card.addView(Sections.separator(ctx, p))
         card.addView(r5); card.addView(Sections.separator(ctx, p))
         card.addView(r6)
