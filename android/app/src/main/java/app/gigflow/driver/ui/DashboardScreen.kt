@@ -107,7 +107,7 @@ class DashboardScreen(
             val todayOffers = OfferLog.all(ctx).filter { it.at >= dayStart }
             val good = todayOffers.count { it.verdict == "GOOD" }
             val text = buildString {
-                append("Today's GigFlow summary\n")
+                append("Today's Shiftlit summary\n")
                 append("Net: ${money(local.earnedCents - local.spentCents, settings.currencySymbol)}\n")
                 append("Earned: ${money(local.earnedCents, settings.currencySymbol)}")
                 append(" · Spent: ${money(local.spentCents, settings.currencySymbol)}\n")

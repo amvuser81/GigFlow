@@ -2,7 +2,7 @@
 
 ## The honest constraint
 
-GigFlow's value depends on platform data — but as of September 2026, **none of
+Shiftlit's value depends on platform data — but as of September 2026, **none of
 the major gig platforms offer a public driver-facing API** for earnings, trip
 history, or offer streams:
 
@@ -29,13 +29,13 @@ This approach:
 - has been criticized by Google as a misuse of accessibility APIs;
 - automating another app's UI can conflict with that platform's terms.
 
-GigFlow ships its own companion for this — see **Android companion** below.
+Shiftlit ships its own companion for this — see **Android companion** below.
 
 Products like **Gridwise** sync earnings by storing your platform credentials
 and logging in as you server-side — brittle (connections break often) and a
-terms-of-service gray area. GigFlow does **not** store platform passwords.
+terms-of-service gray area. Shiftlit does **not** store platform passwords.
 
-## What GigFlow implements instead
+## What Shiftlit implements instead
 
 Four real, user-controlled data paths — nothing simulated:
 
@@ -76,7 +76,7 @@ never "Connected".
 
 ### 4. Android companion (`android/`)
 
-`GigFlow Driver` is a native Kotlin app using `AccessibilityService` — the
+`Shiftlit` is a native Kotlin app using `AccessibilityService` — the
 same class of API as Mystro — with no third-party dependencies:
 
 - `OfferParser.kt` reads offer cards (payout, distance, duration,
@@ -102,7 +102,7 @@ aren't assistive tools — the APK is sideloaded. See `android/README.md`.
 
 | Status | Meaning |
 |---|---|
-| `IMPORT` | Official statement exports exist and GigFlow parses them |
+| `IMPORT` | Official statement exports exist and Shiftlit parses them |
 | `MANUAL` | No API/export pipeline — manual tracking only |
 | `COMING_SOON` | An integration is designed and in progress |
 | `UNAVAILABLE` | Confirmed no viable integration path today |

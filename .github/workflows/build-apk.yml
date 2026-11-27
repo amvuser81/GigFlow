@@ -58,7 +58,7 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v5
         with:
-          name: GigFlow-debug-${{ github.sha }}
+          name: Shiftlit-debug-${{ github.sha }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
 
   # Manual only: bump, sign, publish.
@@ -228,15 +228,15 @@ jobs:
           fi
           echo "APK identity matches the release version."
 
-      - name: Rename APK for GigFlow Updater
+      - name: Rename APK for the updater
         run: |
-          cp android/app/build/outputs/apk/release/app-release.apk "GigFlow-${{ steps.ver.outputs.version }}.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "Shiftlit-${{ steps.ver.outputs.version }}.apk"
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v5
         with:
-          name: GigFlow-${{ steps.ver.outputs.version }}
-          path: GigFlow-${{ steps.ver.outputs.version }}.apk
+          name: Shiftlit-${{ steps.ver.outputs.version }}
+          path: Shiftlit-${{ steps.ver.outputs.version }}.apk
 
       - name: Commit version bump
         env:
@@ -264,6 +264,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.ver.outputs.version }}
-          name: GigFlow v${{ steps.ver.outputs.version }}
+          name: Shiftlit v${{ steps.ver.outputs.version }}
           body: Automated build from commit ${{ github.sha }}
-          files: GigFlow-${{ steps.ver.outputs.version }}.apk
+          files: Shiftlit-${{ steps.ver.outputs.version }}.apk

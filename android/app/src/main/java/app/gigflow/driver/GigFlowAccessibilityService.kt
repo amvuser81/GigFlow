@@ -46,7 +46,7 @@ class GigFlowAccessibilityService : AccessibilityService() {
     private var localDb: LocalDb? = null
     private var countdownTicker: Runnable? = null
 
-    /** Driver apps GigFlow reads — the rest of the event stream is only used to
+    /** Driver apps Shiftlit reads — the rest of the event stream is only used to
      *  notice that the driver app left the screen. */
     private val watched: Set<String> by lazy {
         resources.getStringArray(R.array.watched_packages).toSet()
@@ -366,7 +366,7 @@ class GigFlowAccessibilityService : AccessibilityService() {
     /**
      * True when one of our own *activity* windows is in front. Our accessibility
      * overlays report the same package name, so a plain package comparison
-     * would make every overlay event look like "the user opened GigFlow".
+     * would make every overlay event look like "the user opened Shiftlit".
      */
     private fun ourActivityInFront(): Boolean = try {
         val wins = windows
@@ -420,13 +420,13 @@ class GigFlowAccessibilityService : AccessibilityService() {
         // leaves the app, opens the launcher, or switches to another app.
         if (pkg !in watched) {
             // Our own overlays carry this package as well. Only our *activity*
-            // being in front means the user opened GigFlow; an overlay's own
+            // being in front means the user opened Shiftlit; an overlay's own
             // events must not dismiss the thing that is showing.
             if (pkg == packageName) {
                 if (ourActivityInFront()) {
                     endTeach()
                     // The synthetic test offer is meant to be watched from
-                    // inside GigFlow — its own activity must not wipe it.
+                    // inside Shiftlit — its own activity must not wipe it.
                     val synthetic = activeOffer?.offer?.appPackage == TEST_PKG
                     if (!synthetic) offerGone()
                 }

@@ -4,7 +4,7 @@ package app.gigflow.driver
  * Completed-trip screen extractor — the other half of hands-free logging.
  *
  * After a delivery/trip finishes, driver apps show a summary ("You earned",
- * "Trip fare", "Delivery complete") with a payout figure. When GigFlow sees
+ * "Trip fare", "Delivery complete") with a payout figure. When Shiftlit sees
  * that screen it records an earning automatically, so the driver never types
  * it in. Fingerprinted to avoid double-logging while the screen stays open.
  *

@@ -205,7 +205,7 @@ class OverlayController(private val service: AccessibilityService) {
     }
 
     /**
-     * Compact bar for a screen GigFlow couldn't read. A miss is exactly where
+     * Compact bar for a screen Shiftlit couldn't read. A miss is exactly where
      * teaching matters most, and it is also the moment the card is still live,
      * so this is the only reliable entry to point-at-the-card teaching for a
      * screen the heuristics don't understand.
@@ -225,7 +225,7 @@ class OverlayController(private val service: AccessibilityService) {
             elevation = 8.dp().toFloat()
         }
         card.addView(TextView(service).apply {
-            text = "GigFlow couldn't read this card"
+            text = "Shiftlit couldn't read this card"
             setTextColor(Color.parseColor("#F0B429"))
             textSize = 13.5f
             setTypeface(typeface, android.graphics.Typeface.BOLD)

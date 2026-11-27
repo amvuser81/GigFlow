@@ -10,7 +10,7 @@ import android.widget.FrameLayout
 import app.gigflow.driver.ui.*
 
 /**
- * GigFlow Driver — iOS-styled companion.
+ * Shiftlit — driver utility companion.
  *
  * Five tabs hosted in a single activity (no fragments, no deps):
  *   Dashboard · Offers · Track · Plan · Assistant

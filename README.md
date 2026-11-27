@@ -1,10 +1,12 @@
 <div align="center">
 
-<img src="icon.png" width="128" height="128" alt="GigFlow" />
+<img src="icon.png" width="128" height="128" alt="Shiftlit" />
 
-# GigFlow
+# Shiftlit
 
-**Your gig work. One flow.**
+**Your shift. One decision.**
+
+A fork of [GigFlow](https://github.com/w0wzahh/GigFlow) by Emre Karaaslan (MIT), rebuilt around a driver-utility interface.
 
 An open-source Android app for rideshare and delivery drivers: reads offers
 on-screen, scores them against your rules, optionally accepts or declines for
@@ -22,7 +24,7 @@ where you actually drive.
 
 ## What it is
 
-GigFlow Driver is a **free, open-source alternative to paid driver-assistant
+Shiftlit is a **free, open-source alternative to paid driver-assistant
 apps** like Mystro. It uses Android's accessibility APIs — the same approach
 the paid apps use — to watch the driver apps you choose, read each offer card
 as it appears, score it against thresholds you set, and show a floating
@@ -31,7 +33,7 @@ countdown) or decline the bad ones — hands-free.
 
 Everything runs on-device. No account required, no subscription, no tracking.
 
-> GigFlow is not affiliated with, endorsed by, or connected to Uber, Lyft,
+> Shiftlit is not affiliated with, endorsed by, or connected to Uber, Lyft,
 > DoorDash, Wolt, foodora, or any other platform. All names are trademarks of
 > their owners, used only to identify compatibility.
 
@@ -85,7 +87,7 @@ Grab the latest APK from
 Setup takes under a minute — the app walks you through it in the Assist tab:
 
 1. **Enable the accessibility service** (required — this is what lets
-   GigFlow see offer cards in your driver apps)
+   Shiftlit see offer cards in your driver apps)
 2. **Allow location** (for automatic mileage tracking)
 3. **Allow notifications** (the shift tracker runs as a foreground service)
 
@@ -111,7 +113,7 @@ the throwaway debug key. The signed releases are package
 different app.
 
 1. On the phone, open the repo's **Releases** page and download the
-   `GigFlow-x.y.z.apk` you want.
+   `Shiftlit-x.y.z.apk` you want.
 2. Chrome warns about APK downloads — tap **Download anyway**.
 3. When prompted, allow installs from that app: **Settings → Apps → Special
    access → Install unknown apps → Chrome → Allow from this source**.
@@ -204,7 +206,7 @@ docs/              legal docs, screenshots, notes
 - **Not an official integration.** No gig platform publishes a driver API;
   this reads what's on screen, like every app in this category.
 - **Heuristic parsing.** Driver apps change layouts; if a card can't be
-  read, GigFlow errs toward silence and never guesses at buttons.
+  read, Shiftlit errs toward silence and never guesses at buttons.
 - **Automation is opt-in** and only fires when a button was found
   unambiguously.
 - **Policy note.** Third-party assistants may conflict with gig platforms'

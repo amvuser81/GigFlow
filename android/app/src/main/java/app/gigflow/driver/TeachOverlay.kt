@@ -102,7 +102,7 @@ class TeachOverlay(
         header.addView(titleRow)
 
         header.addView(TextView(service).apply {
-            text = "Tap the payout or a button on the card — GigFlow maps it to " +
+            text = "Tap the payout or a button on the card — Shiftlit maps it to " +
                 "the control you touched, even an icon with no name."
             setTextColor(Color.parseColor("#C7CBD4"))
             textSize = 12.5f

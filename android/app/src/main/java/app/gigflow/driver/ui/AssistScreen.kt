@@ -242,7 +242,7 @@ class AssistScreen(
         })
         col.addView(TextView(ctx).apply {
             text = if (snap.outcome == "miss")
-                "GigFlow did not parse an offer. If this is a mistake, " +
+                "Shiftlit did not parse an offer. If this is a mistake, " +
                     "\"Teach this screen\" and/or \"Email this report\"."
             else "Everything the assistant read on the last screen."
             textSize = Ios.T_FOOTNOTE; setTextColor(p.label2)
@@ -279,7 +279,7 @@ class AssistScreen(
         if (stale != null) {
             col.addView(TextView(ctx).apply {
                 text = if (snap.outcome == "miss")
-                    "Your saved mapping is out of date: $stale. GigFlow won't guess a row " +
+                    "Your saved mapping is out of date: $stale. Shiftlit won't guess a row " +
                         "for it, so the screen misses — tap here to teach it again."
                 else
                     "Your saved mapping is out of date: $stale. A taught button can't " +
@@ -333,7 +333,7 @@ class AssistScreen(
                     putExtra(Intent.EXTRA_EMAIL, arrayOf(DIAG_EMAIL))
                     putExtra(
                         Intent.EXTRA_SUBJECT,
-                        "GigFlow diagnostics — $name ($pkg) · ${snap.outcome}",
+                        "Shiftlit diagnostics — $name ($pkg) · ${snap.outcome}",
                     )
                     putExtra(Intent.EXTRA_TEXT, report.body)
                     // The same JSON as a file: mail clients wrap, reflow and
@@ -494,11 +494,11 @@ class AssistScreen(
         json.put("nodes", nodes)
 
         val body = buildString {
-            append("GigFlow diagnostics\n")
+            append("Shiftlit diagnostics\n")
             append("driver app  ").append(name).append("  (").append(pkg).append(")\n")
             append("outcome     ").append(snap.outcome).append('\n')
             append("captured    ").append(iso).append("  epoch ").append(snap.at).append('\n')
-            append("app         GigFlow ").append(versionName)
+            append("app         Shiftlit ").append(versionName)
                 .append(" (").append(versionCode).append(")\n")
             append("device      ").append(device).append('\n')
             append("display     ").append(dm.widthPixels).append('x').append(dm.heightPixels)
@@ -849,7 +849,7 @@ class AssistScreen(
             if (svc != null) svc.testOffer()
             else Toast.makeText(ctx, "Enable the accessibility service first", Toast.LENGTH_SHORT).show()
         })
-        c_footer(card, "GigFlow only taps when the button is found clearly. It never touches other apps.")
+        c_footer(card, "Shiftlit only taps when the button is found clearly. It never touches other apps.")
         return card
     }
 
@@ -939,7 +939,7 @@ class AssistScreen(
             } catch (_: Exception) { "?" },
             iconGlyph = "doc", iconTint = p.gray,
         ))
-        c_footer(card, "Everything stays on-device. GigFlow isn't affiliated with any gig platform.")
+        c_footer(card, "Everything stays on-device. Shiftlit isn't affiliated with any gig platform.")
         return card
     }
 

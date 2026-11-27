@@ -11,5 +11,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "GigFlowDriver"
+rootProject.name = "Shiftlit"
 include(":app")

@@ -133,7 +133,7 @@ class MileageTracker : Service(), LocationListener {
             this, 1, stopIntent(this), PendingIntent.FLAG_IMMUTABLE,
         )
         return Notification.Builder(this, CHANNEL)
-            .setContentTitle("GigFlow is tracking mileage")
+            .setContentTitle("Shiftlit is tracking mileage")
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentIntent(open)

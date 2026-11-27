@@ -1,6 +1,6 @@
-# Contributing to GigFlow
+# Contributing to Shiftlit
 
-Thanks for considering a contribution. GigFlow is built to be a real
+Thanks for considering a contribution. Shiftlit is built to be a real
 product, not a demo — contributions should keep that bar.
 
 ## Ways to help

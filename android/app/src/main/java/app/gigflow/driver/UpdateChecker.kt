@@ -28,7 +28,9 @@ object UpdateChecker {
 
     private const val REPO = "amvuser81/GigFlow"
     private const val API = "https://api.github.com/repos/$REPO/releases/latest"
-    private const val APK_NAME_PREFIX = "gigflow-" // release assets are lowercase: gigflow-vX.Y.Z.apk
+    // Release assets are matched lowercased. The old prefix stays so a
+    // 1.7.x install can still see the first release under the new name.
+    private val APK_NAME_PREFIXES = listOf("shiftlit-", "gigflow-")
     private val io = Executors.newSingleThreadExecutor()
     private val ui = Handler(Looper.getMainLooper())
 
@@ -65,7 +67,7 @@ object UpdateChecker {
                     connectTimeout = 8000
                     readTimeout = 8000
                     setRequestProperty("Accept", "application/vnd.github+json")
-                    setRequestProperty("User-Agent", "GigFlow-Android/$current")
+                    setRequestProperty("User-Agent", "Shiftlit-Android/$current")
                 }
                 if (conn.responseCode != 200) null else {
                     val body = conn.inputStream.bufferedReader().use { it.readText() }
@@ -76,7 +78,7 @@ object UpdateChecker {
                     if (assets != null) for (i in 0 until assets.length()) {
                         val a = assets.getJSONObject(i)
                         val name = a.optString("name").lowercase()
-                        if (name.startsWith(APK_NAME_PREFIX) && name.endsWith(".apk")) {
+                        if (APK_NAME_PREFIXES.any { name.startsWith(it) } && name.endsWith(".apk")) {
                             apkUrl = a.optString("browser_download_url")
                             size = a.optLong("size")
                             break
@@ -107,7 +109,7 @@ object UpdateChecker {
                 val conn = (URL(rel.apkUrl).openConnection() as HttpURLConnection).apply {
                     connectTimeout = 10_000
                     readTimeout = 30_000
-                    setRequestProperty("User-Agent", "GigFlow-Android")
+                    setRequestProperty("User-Agent", "Shiftlit-Android")
                 }
                 val total = conn.contentLengthLong.takeIf { it > 0 } ?: rel.sizeBytes
                 conn.inputStream.use { inp ->

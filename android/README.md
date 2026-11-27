@@ -1,4 +1,4 @@
-# GigFlow Driver — Android companion
+# Shiftlit — Android companion
 
 A native Android app in the iOS design language: dashboard, offer feed,
 quick-add tracking, and the offer assistant — all on-device, zero

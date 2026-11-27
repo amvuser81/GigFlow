@@ -220,7 +220,7 @@ class OffersScreen(ctx: Context, private val p: Palette, private val settings: a
             gravity = Gravity.CENTER
         })
         addView(TextView(ctx).apply {
-            text = "Go online in a driver app — when an offer card appears, GigFlow scores it and it shows up here."
+            text = "Go online in a driver app — when an offer card appears, Shiftlit scores it and it shows up here."
             textSize = Ios.T_SUBHEAD
             setTextColor(p.label2)
             gravity = Gravity.CENTER
