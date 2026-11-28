@@ -44,6 +44,15 @@ data class DetectedOffer(
     val currencyCode: String? = null,
     /** Seconds the offer gives the driver to decide, if shown on-card. */
     val expiresInSec: Int? = null,
+    /** Every "no" control on the card, best first (see [OfferParser]). Some
+     *  cards pair an explicit Decline with a close X, or land on a confirm
+     *  dialog after the first tap; automation may only tap the runner-up
+     *  after a fresh read shows this same offer still on screen. */
+    val declineNodes: List<NodeRef> = emptyList(),
+    /** The payout label itself. Spark leaves only this part of a list card
+     *  touchable, and tapping it opens that order's detail — the entry point
+     *  its auto-decline has to use before it can reject anything. */
+    val payoutNode: NodeRef? = null,
 ) {
     /**
      * Stable identity for "the same order" while its card is on screen.

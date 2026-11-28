@@ -122,9 +122,12 @@ object OfferParser {
         """(\d{1,3})\s*(minutes|minuten|minutter|minuter|minute|mins?|perc|percet|minut)\b""",
         RegexOption.IGNORE_CASE,
     )
-    // "1 hr 20 min", "2 h", "1 óra 30 perc", "2 godz.", "3 timer"…
+    // "1 hr 20 min", "2 h", "1 óra 30 perc", "2 godz.", "3 timer"… The
+    // comma before the minutes is part of the label on Uber's long trips
+    // ("2 hrs, 35 min"); without it the match stopped at the hours and the
+    // 155-minute job was scored as 120.
     private val HOURS_MIN = Regex(
-        """(\d{1,2})\s*(h|hr|hrs|hour|hours|óra|godz|hod|tuntia|tim|timer)\b\.?\s*(\d{1,2})?\s*(min|perc|minut)?""",
+        """(\d{1,2})\s*(h|hr|hrs|hour|hours|óra|godz|hod|tuntia|tim|timer)\b\.?\s*,?\s*(\d{1,2})?\s*(min|perc|minut)?""",
         RegexOption.IGNORE_CASE,
     )
     // "tip" spans most markets; add the ones that differ (HU/DE/PL/FR/ES/IT/…).
@@ -149,6 +152,15 @@ object OfferParser {
     private val RESERVE_ACCEPT = Regex("""schedule|book|reserve|foglal|boka""", RegexOption.IGNORE_CASE)
     private val DECLINE_WORDS = Regex(
         """decline|\bpass\b|reject|no thanks|skip|close|dismiss|refus|rechaz|recus|ablehn|avvis|afvis|""" +
+            """odmítn|odmiet|odrzu|hylk|elutasít|visszautasít|reddet|atmest|noraid|""" +
+            """відхил|отказ|norite|refuza""",
+        RegexOption.IGNORE_CASE,
+    )
+    /** The same wording minus close/dismiss: a control that names the refusal
+     *  itself. Ranking only — a card whose only no is labelled "Close" still
+     *  gets it (see [declineCandidates]). */
+    private val PRIMARY_DECLINE = Regex(
+        """decline|\bpass\b|reject|no thanks|skip|refus|rechaz|recus|ablehn|avvis|afvis|""" +
             """odmítn|odmiet|odrzu|hylk|elutasít|visszautasít|reddet|atmest|noraid|""" +
             """відхил|отказ|norite|refuza""",
         RegexOption.IGNORE_CASE,
@@ -191,6 +203,8 @@ object OfferParser {
     /** Apps where the whole request card accepts on tap — no labelled button.
      *  Uber docs: "tap anywhere on the black bar"; Lyft: "tap anywhere". */
     private val TAP_ANYWHERE_PKGS = setOf("com.ubercab.driver", "com.lyft.android.driver")
+
+    private const val SPARK_PKG = "com.walmart.sparkdriver"
 
     data class FlatNode(
         val text: String,
@@ -385,6 +399,117 @@ object OfferParser {
         return distanceish >= 4 || money >= 5
     }
 
+    /**
+     * Every control that can say "no" to this card, best first.
+     *
+     * A card often carries more than one: an explicit Decline beside a close
+     * X, a "Dismiss" on a banner behind the card, or a navigation "Close" at
+     * the top of the screen. Taking the first match in tree order tapped
+     * whichever the layout happened to declare first — on a real Uber card a
+     * navigation close can come before the card's own X, and that tap only
+     * closes the map. So an explicit decline verb outranks a generic
+     * close/dismiss, a clickable control outranks a bare label, and proximity
+     * to the payout breaks the rest.
+     */
+    private fun declineCandidates(
+        nodes: List<FlatNode>,
+        pkg: String,
+        payout: FlatNode?,
+        available: Boolean,
+    ): List<NodeRef> {
+        class Pick(val node: NodeRef, val primary: Boolean, val distance: Long)
+
+        val picks = ArrayList<Pick>(4)
+        val seen = HashSet<String>()
+        fun consider(ref: NodeRef, primary: Boolean? = null) {
+            val b = ref.bounds
+            if (b.width() <= 0 || b.height() <= 0) return
+            if (!seen.add("${b.left},${b.top},${b.right},${b.bottom}")) return
+            val dx = (b.centerX() - (payout?.bounds?.centerX() ?: b.centerX())).toLong()
+            val dy = (b.centerY() - (payout?.bounds?.centerY() ?: b.centerY())).toLong()
+            picks.add(
+                Pick(ref, primary ?: PRIMARY_DECLINE.containsMatchIn(ref.label), dx * dx + dy * dy),
+            )
+        }
+
+        nodes.filter { it.text.isNotBlank() && DECLINE_WORDS.containsMatchIn(it.text) }
+            .forEach { consider(NodeRef(it.bounds, it.text, it.clickable)) }
+        unnamedUberDecline(nodes, pkg, payout, available)?.let { consider(it, primary = true) }
+
+        return picks.sortedWith(
+            compareByDescending<Pick> { it.primary }
+                .thenByDescending { it.node.clickable }
+                .thenBy { it.distance },
+        ).map { it.node }
+    }
+
+    /**
+     * Uber's decline control is an unlabeled close icon in the card's
+     * top-right. It has no text or view id to match, so find it by shape and
+     * position relative to the payout. Big clickable nodes (the card, the
+     * root) and map markers elsewhere on screen are excluded.
+     */
+    private fun unnamedUberDecline(
+        nodes: List<FlatNode>,
+        pkg: String,
+        payout: FlatNode?,
+        available: Boolean,
+    ): NodeRef? {
+        if (pkg != "com.ubercab.driver" || !available) return null
+        val m = payout ?: return null
+        return nodes
+            .filter { n ->
+                n.clickable &&
+                    n.text.isBlank() &&
+                    n.viewId.isNullOrBlank() &&
+                    n.bounds.width() in 48..260 &&
+                    n.bounds.height() in 48..260 &&
+                    n.bounds.centerX() > m.bounds.right &&
+                    n.bounds.centerY() in (m.bounds.top - 360)..(m.bounds.bottom + 240)
+            }
+            .minByOrNull { Math.abs(it.bounds.centerY() - m.bounds.centerY()) }
+            ?.let { NodeRef(it.bounds, "decline (close X)", true) }
+    }
+
+    /**
+     * The reject/decline control on a screen with no offer card of its own.
+     *
+     * Some apps decline in two taps — Spark shows "Reject" on the card, then
+     * a confirm sheet whose own button says "Reject Offer". That sheet
+     * covers the card and carries no distance or duration, so it never
+     * parses as an offer. Only explicit refusal wording counts here: a
+     * generic Close could dismiss the sheet without declining, and closing
+     * is what the driver must never have chosen for them.
+     */
+    fun confirmDeclineTarget(nodes: List<FlatNode>): NodeRef? =
+        nodes
+            .filter { it.text.isNotBlank() && PRIMARY_DECLINE.containsMatchIn(it.text) }
+            .sortedWith(
+                compareByDescending<FlatNode> { it.clickable }
+                    .thenByDescending { it.bounds.width().toLong() * it.bounds.height().toLong() },
+            )
+            .firstOrNull()
+            ?.let { NodeRef(it.bounds, it.text, it.clickable) }
+
+    /**
+     * The refresh action Spark puts over its offer list.
+     *
+     * It shows with orders still on screen, not just on an empty list, and
+     * nothing can be declined until it is tapped. Its label never appears in
+     * the tree — the action is blank, and the snackbar says only "You have
+     * new offer(s) available." or "Something went wrong. Please try again."
+     * The view id `com.walmart.sparkdriver:id/snackbar_action` is unique to
+     * this control (nothing else in the app has used it in a year of use), so
+     * the id is the match. Tapping it only reloads the list; it never accepts
+     * or declines.
+     */
+    fun stalledListAction(pkg: String, nodes: List<FlatNode>): Bounds? {
+        if (pkg != SPARK_PKG) return null
+        return nodes.firstOrNull { n ->
+            n.viewId?.endsWith("id/snackbar_action") == true && n.bounds.width() > 0
+        }?.bounds
+    }
+
     fun parse(
         pkg: String,
         nodes: List<FlatNode>,
@@ -551,17 +676,22 @@ object OfferParser {
         val perKm = distanceKm?.takeIf { it > 0 }?.let { payout / it / scale }
         val perHour = durationMin?.takeIf { it > 0 }?.let { payout * 60.0 / it / scale }
         val noted = if (scale != 1.0) " at %.0f %s/USD".format(scale, currency) else ""
+        // The gate's bounds are USD/km, but the decision trail is read by the
+        // driver: quote the rate in the unit they picked, or a miles setting
+        // reports a per-km figure that matches nothing on the card.
+        val unitLabel = if (unit == "KM") "km" else "mi"
+        fun quotedRate(usdPerKm: Double) = if (unit == "KM") usdPerKm else usdPerKm * 1.609344
         if ((perKm != null && perKm !in PLAUSIBLE_PER_KM) ||
             (perHour != null && perHour !in PLAUSIBLE_PER_HOUR)
         ) {
             trace?.add(
-                "implausible$noted: ${perKm?.let { "%.2f".format(it) }} USD/km, " +
+                "implausible$noted: ${perKm?.let { "%.2f".format(quotedRate(it)) }} USD/$unitLabel, " +
                     "${perHour?.let { "%.1f".format(it) }} USD/hr → not an offer",
             )
             return null
         }
         trace?.add(
-            "rate ok$noted: ${perKm?.let { "%.2f".format(it) }} USD/km, " +
+            "rate ok$noted: ${perKm?.let { "%.2f".format(quotedRate(it)) }} USD/$unitLabel, " +
                 "${perHour?.let { "%.1f".format(it) }} USD/hr",
         )
 
@@ -601,33 +731,18 @@ object OfferParser {
                 } else null
                 ?: tapAnywhereAccept(payoutMoney?.node)
         }
-        // Uber's decline control is an unlabeled close icon in the card's
-        // top-right. It has no text or view id to match, so find it by shape
-        // and position relative to the payout. Big clickable nodes (the card,
-        // the root) and map markers elsewhere on screen are excluded.
-        fun unnamedUberDecline(payoutNode: FlatNode?): NodeRef? {
-            if (pkg != "com.ubercab.driver" || unavailable) return null
-            val m = payoutNode ?: return null
-            return nodes
-                .filter { n ->
-                    n.clickable &&
-                        n.text.isBlank() &&
-                        n.viewId.isNullOrBlank() &&
-                        n.bounds.width() in 48..260 &&
-                        n.bounds.height() in 48..260 &&
-                        n.bounds.centerX() > m.bounds.right &&
-                        n.bounds.centerY() in (m.bounds.top - 360)..(m.bounds.bottom + 240)
-                }
-                .minByOrNull { Math.abs(it.bounds.centerY() - m.bounds.centerY()) }
-                ?.let { it.ref().copy(label = "decline (close X)") }
-        }
+        // Every control that can say no, best first: a card with both an
+        // explicit Decline and a close X must offer the Decline, not whichever
+        // the tree happens to list first.
+        val noControls = declineCandidates(nodes, pkg, payoutMoney?.node, !unavailable)
+        val decline = taughtDecline?.let { it.ref() } ?: noControls.firstOrNull()
+        val declineList = if (decline == null) noControls
+        else listOf(decline) + noControls.filter { it.bounds != decline.bounds }
 
-        val decline = taughtDecline?.let { it.ref() }
-            ?: nodeMatching(DECLINE_WORDS, clickableOnly = true)
-            ?: nodeMatching(DECLINE_WORDS, clickableOnly = false)
-            ?: unnamedUberDecline(payoutMoney?.node)
-
-        trace?.add("accept=${accept?.label ?: "none"} decline=${decline?.label ?: "none"}")
+        trace?.add(
+            "accept=${accept?.label ?: "none"} decline=${decline?.label ?: "none"}" +
+                if (declineList.size > 1) " (${declineList.size} no-controls)" else "",
+        )
 
         return DetectedOffer(
             appPackage = pkg,
@@ -638,6 +753,10 @@ object OfferParser {
             extraDistanceKm = null,
             acceptNode = accept,
             declineNode = decline,
+            declineNodes = declineList,
+            // Spark opens an order from its payout label; a taught payout is
+            // just as good an entry point when the label wasn't recognised.
+            payoutNode = payoutMoney?.node?.ref() ?: taughtPayout?.ref(),
             rawTexts = texts,
             currencySymbol = currency,
             currencyCode = currencyCode.takeIf { currency == extraSymbol },

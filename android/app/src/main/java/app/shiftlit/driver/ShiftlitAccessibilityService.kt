@@ -29,6 +29,11 @@ class ShiftlitAccessibilityService : AccessibilityService() {
     private var lastSeenAt = 0L
     private var lastScanAt = 0L
     private var lastRadarTapAt = 0L
+    private var lastStalledTapAt = 0L
+
+    /** Payout of the Spark order whose card was opened for a reject — 0 when
+     *  none. A scan of the opened detail must reject, not open it again. */
+    private var sparkOpenedPayout = 0
     private var scanToken = 0
     private var activeOffer: ScoredOffer? = null
 
@@ -42,6 +47,11 @@ class ShiftlitAccessibilityService : AccessibilityService() {
     private var tts: TextToSpeech? = null
     private var localDb: LocalDb? = null
     private var countdownTicker: Runnable? = null
+
+    /** One extra decline tap on a freshly read screen — see [scheduleDeclineRetry]. */
+    private var declineRetry: Runnable? = null
+    private var declineRetryKey = ""
+    private var declineRetried = false
 
     /**
      * Safety net for offer windows that draw without emitting an accessibility
@@ -78,6 +88,18 @@ class ShiftlitAccessibilityService : AccessibilityService() {
 
         /** A verdict never outlives this, even if the card behind it lingers. */
         private const val MAX_OVERLAY_MS = 30_000L
+
+        /** How long a decline gets to clear the card before the same offer,
+         *  re-read live, may be declined by a different control. */
+        private const val DECLINE_RETRY_MS = 1_200L
+
+        /** Don't tap a stalled list's refresh on every scan while its snackbar
+         *  lingers; a reload needs a moment to produce cards. */
+        private const val STALLED_REFRESH_MS = 4_000L
+
+        /** Spark's order detail after its payout was tapped. */
+        private const val SPARK_PKG = "com.walmart.sparkdriver"
+        private const val SPARK_OPEN_MS = 900L
 
         /** Package name of the synthetic offer from the Assist screen. */
         private const val TEST_PKG = "app.shiftlit.test"
@@ -355,11 +377,14 @@ class ShiftlitAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Re-read the live windows immediately before opening a radar pill. The
-     * pill can vanish while a scan is in flight; only a fresh tree and fresh
-     * bounds may be tapped, never the snapshot that triggered this attempt.
+     * Re-read the live windows immediately before a tap. A control can vanish
+     * while a scan is in flight, so only a fresh tree and fresh bounds may be
+     * tapped, never the snapshot that triggered the attempt.
      */
-    private fun freshTripRadarTapTarget(pkg: String): Bounds? {
+    private fun freshTapTarget(
+        pkg: String,
+        find: (List<OfferParser.FlatNode>) -> Bounds?,
+    ): Bounds? {
         val wins = try {
             windows
         } catch (_: Exception) {
@@ -373,12 +398,20 @@ class ShiftlitAccessibilityService : AccessibilityService() {
                 root.recycle()
                 continue
             }
-            val target = OfferParser.tripRadarTapTarget(OfferParser.flatten(root))
-            root.recycle()
+            // flatten() recycles the root itself.
+            val target = find(OfferParser.flatten(root))
             if (target != null) return target
         }
         return null
     }
+
+    /** Fresh bounds for Uber's Trip Radar pill, or null. */
+    private fun freshTripRadarTapTarget(pkg: String): Bounds? =
+        freshTapTarget(pkg) { OfferParser.tripRadarTapTarget(it) }
+
+    /** Fresh bounds for a stalled offer list's refresh action, or null. */
+    private fun freshStalledListAction(pkg: String): Bounds? =
+        freshTapTarget(pkg) { OfferParser.stalledListAction(pkg, it) }
 
     /**
      * The first visible window owned by a watched app. This keeps the service
@@ -586,6 +619,31 @@ class ShiftlitAccessibilityService : AccessibilityService() {
         val hasMoney = nodes.any {
             OfferParser.moneyOf(it.text, extraRe, curSymbol) != null
         }
+        // Spark overlays its offer list with a refresh action — often while
+        // orders are still on it — and nothing can be declined until it is
+        // tapped. Do this before scoring: acting on the rows behind it is how
+        // a decline lands on the wrong order. A decline already in flight
+        // owns the screen, and the throttle stops a lingering action from
+        // refreshing in a loop.
+        if (prefs.autoDecline && pkg == SPARK_PKG && sparkOpenedPayout == 0 &&
+            now - lastStalledTapAt > STALLED_REFRESH_MS &&
+            OfferParser.stalledListAction(pkg, nodes) != null
+        ) {
+            val refresh = freshStalledListAction(pkg)
+            if (refresh != null) {
+                lastStalledTapAt = now
+                Diagnostics.record(this, pkg, "idle", nodes, decision)
+                Diagnostics.note(this, pkg, "offer list refresh → tapping it (no accept)")
+                GesturePerformer.tap(this, refresh) { ok ->
+                    if (ok) handler.postDelayed(
+                        { scan(pkg, System.currentTimeMillis(), 0, ++scanToken) },
+                        800,
+                    )
+                }
+                return
+            }
+        }
+
         // A taught mapping for this exact layout, if the user made one. It is
         // only consulted when the heuristics return nothing (see OfferParser).
         val hint = ParseHints.forScreen(this, pkg, nodes)
@@ -774,17 +832,10 @@ class ShiftlitAccessibilityService : AccessibilityService() {
         if (autoAcceptDelay > 0) {
             scheduleAutoAccept(scored, offer.acceptNode!!, autoAcceptDelay)
         } else if (autoDeclineNow) {
-            offer.declineNode?.let { node ->
-                GesturePerformer.tap(this, node.bounds) { ok ->
-                    if (ok) {
-                        recordAction(scored, "auto_decline")
-                    } else if (activeOffer === scored) {
-                        // The tap never dispatched. The card was suppressed in
-                        // favour of this decline, so bring it back rather than
-                        // leave the offer up with no verdict at all.
-                        showScorecard()
-                    }
-                }
+            if (pkg == SPARK_PKG && sparkOpenedPayout != offer.payoutCents) {
+                openThenDecline(scored, prefs) { showScorecard() }
+            } else {
+                offer.declineNode?.let { autoDecline(scored, it) { showScorecard() } }
             }
         }
     }
@@ -800,6 +851,171 @@ class ShiftlitAccessibilityService : AccessibilityService() {
             GesturePerformer.swipeRight(this, node.bounds, done)
         } else {
             GesturePerformer.tap(this, node.bounds, done)
+        }
+    }
+
+    /**
+     * Tap a decline control, then give the card a moment to go.
+     *
+     * Some cards carry a second "no" — an explicit Decline beside a close X,
+     * or a confirmation after the first tap. Losing the decline to the wrong
+     * one leaves the card up with no scorecard (auto-decline suppresses it),
+     * so if this same offer is still on screen the live tree is read again
+     * and a different control is tapped. Coordinates only ever come from that
+     * fresh read: a screen that no longer parses as this offer is left alone.
+     */
+    private fun autoDecline(
+        scored: ScoredOffer,
+        node: NodeRef,
+        /** Redraws the scorecard when the first tap never dispatched — it was
+         *  suppressed in favour of this decline, so the offer would otherwise
+         *  sit there with no verdict. A retry keeps whatever is on screen. */
+        onFailed: (() -> Unit)? = null,
+    ) {
+        GesturePerformer.tap(this, node.bounds) { ok ->
+            if (!ok) {
+                if (activeOffer === scored) onFailed?.invoke()
+                return@tap
+            }
+            recordAction(scored, "auto_decline")
+            scheduleDeclineRetry(scored, node.bounds)
+        }
+    }
+
+    /** At most one retry per offer. */
+    private fun scheduleDeclineRetry(scored: ScoredOffer, tried: Bounds) {
+        declineRetry?.let { handler.removeCallbacks(it) }
+        val key = scored.offer.fingerprint
+        if (declineRetryKey != key) {
+            declineRetryKey = key
+            declineRetried = false
+        }
+        if (declineRetried) return
+        val r = Runnable {
+            if (activeOffer !== scored) return@Runnable
+            val next = freshDeclineTarget(scored.offer.appPackage, key, tried) ?: return@Runnable
+            declineRetried = true
+            autoDecline(scored, next)
+        }
+        declineRetry = r
+        handler.postDelayed(r, DECLINE_RETRY_MS)
+    }
+
+    private class LiveRead(
+        val nodes: List<OfferParser.FlatNode>,
+        val offer: DetectedOffer?,
+    )
+
+    /** Every visible window of [pkg], flattened and parsed with its mapping. */
+    private fun liveReads(pkg: String): List<LiveRead> {
+        val wins = try {
+            windows
+        } catch (_: Exception) {
+            return emptyList()
+        }
+        val curSymbol = settings.currencySymbol
+        val extra = OfferParser.extraMoney(settings.currencyCode, curSymbol)
+        val out = ArrayList<LiveRead>(2)
+        for (w in wins) {
+            val root = w.root ?: continue
+            val name = root.packageName?.toString()
+            val visible = root.isVisibleToUser || w.isActive || w.isFocused
+            if (name != pkg || !visible) {
+                root.recycle()
+                continue
+            }
+            val nodes = OfferParser.flatten(root) // recycles the root
+            out.add(
+                LiveRead(
+                    nodes,
+                    OfferParser.parse(
+                        pkg, nodes, extra, curSymbol, settings.currencyCode, null,
+                        ParseHints.forScreen(this, pkg, nodes), settings.distanceUnit,
+                    ),
+                ),
+            )
+        }
+        return out
+    }
+
+    /**
+     * The next decline control on the live screen, or null when the card is
+     * gone, replaced by a different offer, or nothing untried is left.
+     */
+    private fun freshDeclineTarget(pkg: String, fingerprint: String, tried: Bounds): NodeRef? {
+        for (read in liveReads(pkg)) {
+            val offer = read.offer
+            if (offer != null) {
+                if (offer.fingerprint != fingerprint) continue
+                val candidates = offer.declineNodes.ifEmpty { listOfNotNull(offer.declineNode) }
+                return candidates.firstOrNull { it.bounds != tried }
+            }
+            // No card parses here: this is the second step of a two-tap
+            // decline ("Reject" → "Reject Offer"), which covers the card and
+            // shows no distance or duration. Only explicit refusal wording is
+            // tapped, never a generic close and never the control already
+            // tried.
+            return OfferParser.confirmDeclineTarget(read.nodes)?.takeIf { it.bounds != tried }
+        }
+        return null
+    }
+
+    /**
+     * Spark broadcasts most orders to every driver at once, and its list
+     * reorders as they are claimed: a Reject tapped straight from the list can
+     * land on a different order. So open the order first by tapping its payout
+     * — the only part of a Spark card it leaves touchable — then reject the
+     * order the detail actually shows. [autoDecline]'s retry answers the
+     * "Reject Offer" confirmation.
+     *
+     * The detail is scored on its own because Spark restamps the list from
+     * live data: the row that was tapped can open a different amount. A good
+     * or unreadable detail gets a fresh scan instead of being left card-less;
+     * a bad one is rejected.
+     */
+    private fun openThenDecline(scored: ScoredOffer, prefs: RulePrefs, onFailed: () -> Unit) {
+        val entry = scored.offer.payoutNode
+        if (entry == null) {
+            onFailed()
+            return
+        }
+        sparkOpenedPayout = scored.offer.payoutCents
+        GesturePerformer.tap(this, entry.bounds) { ok ->
+            if (!ok) {
+                sparkOpenedPayout = 0
+                if (activeOffer === scored) onFailed()
+                return@tap
+            }
+            handler.postDelayed(
+                {
+                    // Whatever the detail shows is the order that opened. Its
+                    // payout can differ from the row that was tapped — Spark
+                    // restamps the list from live data — so that detail is
+                    // scored on its own and acted on, rather than left on
+                    // screen untouched.
+                    var opened: DetectedOffer? = null
+                    for (read in liveReads(scored.offer.appPackage)) {
+                        val o = read.offer
+                        if (o != null) {
+                            opened = o
+                            break
+                        }
+                    }
+                    if (opened == null) return@postDelayed
+                    sparkOpenedPayout = opened.payoutCents
+                    val rescored = RuleEngine.score(opened, prefs)
+                    val node = opened.declineNode
+                    if (rescored.verdict == Verdict.BAD && node != null) {
+                        autoDecline(rescored, node)
+                        return@postDelayed
+                    }
+                    // Good, or nothing to tap: force a fresh score so this
+                    // detail gets its own card instead of sitting card-less.
+                    lastFingerprint = ""
+                    scan(SPARK_PKG, System.currentTimeMillis(), 0, ++scanToken)
+                },
+                SPARK_OPEN_MS,
+            )
         }
     }
 
@@ -942,6 +1158,11 @@ class ShiftlitAccessibilityService : AccessibilityService() {
     private fun offerGone() {
         hideRunnable?.let { handler.removeCallbacks(it) }
         hideToken = ""
+        declineRetry?.let { handler.removeCallbacks(it) }
+        declineRetry = null
+        declineRetryKey = ""
+        declineRetried = false
+        sparkOpenedPayout = 0
         cancelAutoAccept() // never tap bounds for a card that's no longer up
         activeOffer = null
         lastFingerprint = ""

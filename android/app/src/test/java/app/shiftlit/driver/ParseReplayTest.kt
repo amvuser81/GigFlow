@@ -577,4 +577,171 @@ class ParseReplayTest {
             OfferParser.scoreScreen(nodes, extra, "KSh").money,
         )
     }
+
+    @Test
+    fun hoursAndMinutesInOneLabelKeepTheMinutes() {
+        // "2 hrs, 35 min" is how Uber prints a long trip. The comma used to
+        // end the match at "2 hrs", so a 155-minute job scored as 120.
+        val offer = OfferParser.parse(
+            "com.ubercab.driver",
+            listOf(
+                OfferParser.FlatNode("$30.00", "app:id/fare", Bounds(0, 0, 400, 80), false),
+                OfferParser.FlatNode("10 mi", null, Bounds(0, 80, 400, 140), false),
+                OfferParser.FlatNode("2 hrs, 35 min", null, Bounds(0, 140, 400, 200), false),
+            ),
+        )
+        assertNotNull(offer)
+        assertEquals(155.0, offer!!.durationMin!!, 0.001)
+    }
+
+    @Test
+    fun diagnosticsQuoteTheRateInTheConfiguredUnit() {
+        val nodes = listOf(
+            OfferParser.FlatNode("$20.00", null, Bounds(0, 0, 400, 80), false),
+            OfferParser.FlatNode("10 mi", null, Bounds(0, 80, 400, 140), false),
+            OfferParser.FlatNode("30 min", null, Bounds(0, 140, 400, 200), false),
+        )
+        val mi = ArrayList<String>()
+        OfferParser.parse("com.ubercab.driver", nodes, trace = mi)
+        assertTrue("miles mode must not report per km: $mi", mi.any { it.contains("2.00 USD/mi") })
+        assertFalse("miles mode quoted a km rate: $mi", mi.any { it.contains("USD/km") })
+
+        // 10 mi is 16.09 km, so $20 is $1.24/km.
+        val km = ArrayList<String>()
+        OfferParser.parse("com.ubercab.driver", nodes, trace = km, unit = "KM")
+        assertTrue("km mode keeps per km: $km", km.any { it.contains("1.24 USD/km") })
+    }
+
+    @Test
+    fun explicitDeclineBeatsANavigationClose() {
+        // The card's Decline sits at the bottom; a "Close" on the navigation
+        // bar above it used to win simply by being declared first in the tree.
+        val decline = OfferParser.FlatNode("Decline", "app:id/decline", Bounds(80, 1800, 1000, 1944), true)
+        val navClose = OfferParser.FlatNode("Close", "app:id/nav_close", Bounds(24, 24, 120, 120), true)
+        val offer = OfferParser.parse(
+            "com.doordash.driverapp",
+            listOf(
+                navClose,
+                OfferParser.FlatNode("$9.50", null, Bounds(80, 600, 500, 760), false),
+                OfferParser.FlatNode("4.2 mi", null, Bounds(80, 780, 400, 860), false),
+                OfferParser.FlatNode("18 min", null, Bounds(80, 880, 400, 960), false),
+                decline,
+            ),
+        )!!
+        assertEquals(decline.bounds, offer.declineNode?.bounds)
+        assertEquals(
+            "the navigation close stays available as a fallback, after the Decline",
+            listOf(decline.bounds, navClose.bounds),
+            offer.declineNodes.map { it.bounds },
+        )
+    }
+
+    @Test
+    fun aCardsOwnCloseXBeatsABannerDismiss() {
+        // Two no-controls in one tree: a promo banner's Dismiss above the card,
+        // and the card's blank top-right X. Only the X declines the job.
+        val x = OfferParser.FlatNode("", null, Bounds(840, 1144, 984, 1288), true)
+        val banner = OfferParser.FlatNode("Dismiss", "app:id/promo_dismiss", Bounds(700, 420, 1000, 540), true)
+        val offer = OfferParser.parse(
+            "com.ubercab.driver",
+            listOf(
+                OfferParser.FlatNode("", null, Bounds(0, 0, 1080, 2340), true),
+                OfferParser.FlatNode("", null, Bounds(48, 1096, 1032, 2148), true),
+                OfferParser.FlatNode("$8.63", null, Bounds(96, 1241, 426, 1409), false),
+                OfferParser.FlatNode("28 min (10.0 mi) total", null, Bounds(192, 1581, 726, 1665), false),
+                OfferParser.FlatNode("Match", null, Bounds(96, 1956, 984, 2100), true),
+                banner,
+                x,
+            ),
+        )!!
+        assertEquals("the card's own X must win", x.bounds, offer.declineNode?.bounds)
+        assertEquals("both controls are kept for the retry", 2, offer.declineNodes.size)
+        assertEquals(x.bounds, offer.declineNodes.first().bounds)
+    }
+
+    @Test
+    fun sparkCardKeepsItsRejectButtonAndPayoutEntry() {
+        val payout = OfferParser.FlatNode("$24.00", null, Bounds(60, 600, 500, 780), false)
+        val reject = OfferParser.FlatNode("Reject", "com.walmart.sparkdriver:id/reject", Bounds(60, 1700, 1020, 1860), true)
+        val offer = OfferParser.parse(
+            "com.walmart.sparkdriver",
+            listOf(
+                payout,
+                OfferParser.FlatNode("8.4 mi", null, Bounds(60, 820, 400, 900), false),
+                OfferParser.FlatNode("42 min", null, Bounds(60, 920, 400, 1000), false),
+                reject,
+            ),
+        )!!
+        assertEquals(reject.bounds, offer.declineNode?.bounds)
+        // Spark only lets the payout be tapped; it is how its order detail
+        // opens before a reject.
+        assertEquals(payout.bounds, offer.payoutNode?.bounds)
+    }
+
+    @Test
+    fun sparksSecondRejectOfferIsStillADeclineControl() {
+        // Spark declines in two taps: "Reject" on the card, then a confirm
+        // sheet whose button says "Reject Offer". The sheet covers the card
+        // and shows no payout, distance or duration.
+        val target = OfferParser.confirmDeclineTarget(
+            listOf(
+                OfferParser.FlatNode("Keep Offer", "com.walmart.sparkdriver:id/keep", Bounds(60, 1500, 1020, 1640), true),
+                OfferParser.FlatNode("Reject Offer", "com.walmart.sparkdriver:id/reject", Bounds(60, 1660, 1020, 1800), true),
+            ),
+        )
+        assertEquals(Bounds(60, 1660, 1020, 1800), target?.bounds)
+        assertEquals("Reject Offer", target?.label)
+    }
+
+    @Test
+    fun sparksOfferListRefreshIsMatchedByItsViewId() {
+        val action = OfferParser.FlatNode(
+            "",
+            "com.walmart.sparkdriver:id/snackbar_action",
+            Bounds(760, 2080, 1020, 2200),
+            true,
+        )
+        // The label is not in the tree at all; the id is what identifies it.
+        assertEquals(
+            action.bounds,
+            OfferParser.stalledListAction("com.walmart.sparkdriver", listOf(action)),
+        )
+        // It shows while orders are still on the list, so a payout may be up.
+        assertEquals(
+            action.bounds,
+            OfferParser.stalledListAction(
+                "com.walmart.sparkdriver",
+                listOf(
+                    OfferParser.FlatNode("$18.00", null, Bounds(60, 400, 500, 560), false),
+                    action,
+                ),
+            ),
+        )
+        assertNull(
+            "only Spark's list is handled",
+            OfferParser.stalledListAction("com.ubercab.driver", listOf(action)),
+        )
+        assertNull(
+            "a different snackbar id is not the refresh",
+            OfferParser.stalledListAction(
+                "com.walmart.sparkdriver",
+                listOf(action.copy(viewId = "com.walmart.sparkdriver:id/other_action")),
+            ),
+        )
+    }
+
+    @Test
+    fun aCardWhoseOnlyNoIsLabelledCloseStillDeclines() {
+        val close = OfferParser.FlatNode("Close", null, Bounds(900, 300, 1000, 400), true)
+        val offer = OfferParser.parse(
+            "com.instacart.shopper",
+            listOf(
+                close,
+                OfferParser.FlatNode("$11.00", null, Bounds(60, 500, 500, 640), false),
+                OfferParser.FlatNode("3.1 mi", null, Bounds(60, 680, 400, 740), false),
+                OfferParser.FlatNode("14 min", null, Bounds(60, 780, 400, 840), false),
+            ),
+        )!!
+        assertEquals("a labelled no is still a no", close.bounds, offer.declineNode?.bounds)
+    }
 }
